@@ -2,6 +2,10 @@
 cache/
 out/
 
+# Dependencies
+lib/
+remappings.txt
+
 # Ignores development broadcast logs
 !/broadcast
 /broadcast/*/31337/
