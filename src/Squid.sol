@@ -21,11 +21,12 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {Position} from "./types/Position.sol";
 
 import {TokenWhitelist} from "./libraries/TokenWhitelist.sol";
+import {UnichainSupportedTokens} from "./libraries/UnichainSupportedTokens.sol";
 
 // import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 // import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
+contract Squid is BaseHook, TokenWhitelist, UnichainSupportedTokens, Ownable2Step {
     address[] public lps;
     mapping(address => Position) public lpPositions;
 
@@ -51,7 +52,7 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
     }
 
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal view override returns (bytes4) {
-        _checkPoolTokensWhitelisted(key);
+        _checkPoolCurrenciesAllowed(key);
         return (this.beforeInitialize.selector);
     }
 
@@ -61,7 +62,7 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
         override
         returns (bytes4)
     {
-        _checkPoolTokensWhitelisted(key);
+        _checkPoolCurrenciesAllowed(key);
         return (this.beforeAddLiquidity.selector);
     }
 
@@ -71,7 +72,7 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
         override
         returns (bytes4)
     {
-        _checkPoolTokensWhitelisted(key);
+        _checkPoolCurrenciesAllowed(key);
         return (this.beforeRemoveLiquidity.selector);
     }
 
@@ -81,7 +82,7 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        _checkPoolTokensWhitelisted(key);
+        _checkPoolCurrenciesAllowed(key);
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -91,8 +92,23 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
         override
         returns (bytes4)
     {
-        _checkPoolTokensWhitelisted(key);
+        _checkPoolCurrenciesAllowed(key);
         return (this.beforeDonate.selector);
+    }
+
+    function _checkPoolCurrenciesAllowed(PoolKey calldata key) internal view {
+        address token0 = Currency.unwrap(key.currency0);
+        address token1 = Currency.unwrap(key.currency1);
+
+        _checkSupportedUnichainCurrency(token0);
+        _checkSupportedUnichainCurrency(token1);
+
+        if (
+            (token0 != address(0) && !_isWhitelistedToken[token0])
+                || (token1 != address(0) && !_isWhitelistedToken[token1])
+        ) {
+            revert PoolTokensNotWhitelisted(token0, token1);
+        }
     }
 
     // function _afterAddLiquidity(
@@ -123,6 +139,7 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
     /********* WHITELIST LOGIC *********/
 
     function addWhitelistedToken(address token) external onlyOwner {
+        _checkSupportedUnichainToken(token);
         _addWhitelistedToken(token);
     }
 
@@ -131,10 +148,16 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
     }
 
     function setTokenWhitelisted(address token, bool allowed) external onlyOwner {
+        if (allowed) {
+            _checkSupportedUnichainToken(token);
+        }
         _setTokenWhitelisted(token, allowed);
     }
 
     function addWhitelistedTokens(address[] calldata tokens) external onlyOwner {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            _checkSupportedUnichainToken(tokens[i]);
+        }
         _addWhitelistedTokens(tokens);
     }
 
