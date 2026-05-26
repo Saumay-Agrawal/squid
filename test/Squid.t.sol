@@ -10,6 +10,8 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
 import {Squid} from "../src/Squid.sol";
 import {TokenWhitelist} from "../src/libraries/TokenWhitelist.sol";
@@ -27,10 +29,11 @@ contract SquidTest is Test, Deployers {
     function setUp() public {
         deployFreshManagerAndRouters();
 
-        (token0, token1) = deployAndMint2Currencies();
+        (token0, token1) = deployMintAndApprove2Currencies();
         unlistedToken = deployMintAndApproveCurrency();
 
-        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG;
+        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_DONATE_FLAG;
         hook = Squid(address(uint160(type(uint160).max & clearAllHookPermissionsMask | flags)));
         deployCodeTo("Squid", abi.encode(manager, admin), address(hook));
     }
@@ -112,6 +115,49 @@ contract SquidTest is Test, Deployers {
         manager.initialize(key, SQRT_PRICE_1_1);
     }
 
+    function test_RevertAddLiquidityAfterTokenRemovedFromWhitelist() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+
+        _removeFromWhitelist(token0);
+
+        _expectWrappedPoolTokenRevert(IHooks.beforeAddLiquidity.selector, key);
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+    }
+
+    function test_RevertRemoveLiquidityAfterTokenRemovedFromWhitelist() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        _removeFromWhitelist(token0);
+
+        _expectWrappedPoolTokenRevert(IHooks.beforeRemoveLiquidity.selector, key);
+        modifyLiquidityRouter.modifyLiquidity(key, REMOVE_LIQUIDITY_PARAMS, ZERO_BYTES);
+    }
+
+    function test_RevertSwapAfterTokenRemovedFromWhitelist() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        _removeFromWhitelist(token0);
+
+        _expectWrappedPoolTokenRevert(IHooks.beforeSwap.selector, key);
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -100, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+    }
+
+    function test_RevertDonateAfterTokenRemovedFromWhitelist() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+
+        _removeFromWhitelist(token0);
+
+        _expectWrappedPoolTokenRevert(IHooks.beforeDonate.selector, key);
+        donateRouter.donate(key, 100, 100, ZERO_BYTES);
+    }
+
     function test_RevertInitializePoolWhenEitherTokenIsNotWhitelisted() public {
         vm.prank(admin);
         hook.addWhitelistedToken(Currency.unwrap(token0));
@@ -156,6 +202,33 @@ contract SquidTest is Test, Deployers {
         hook.addWhitelistedToken(Currency.unwrap(currency0));
         hook.addWhitelistedToken(Currency.unwrap(currency1));
         vm.stopPrank();
+    }
+
+    function _removeFromWhitelist(Currency currency) internal {
+        vm.prank(admin);
+        hook.removeWhitelistedToken(Currency.unwrap(currency));
+    }
+
+    function _initializeWhitelistedPool() internal returns (PoolKey memory key) {
+        _whitelistPair(token0, token1);
+        key = _poolKey(token0, token1);
+        manager.initialize(key, SQRT_PRICE_1_1);
+    }
+
+    function _expectWrappedPoolTokenRevert(bytes4 hookSelector, PoolKey memory key) internal {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                hookSelector,
+                abi.encodeWithSelector(
+                    TokenWhitelist.PoolTokensNotWhitelisted.selector,
+                    Currency.unwrap(key.currency0),
+                    Currency.unwrap(key.currency1)
+                ),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
     }
 
     function _poolKey(Currency currency0, Currency currency1) internal view returns (PoolKey memory) {

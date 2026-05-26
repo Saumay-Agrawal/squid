@@ -9,6 +9,7 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {SwapParams} from "v4-core/types/PoolOperation.sol";
 import {ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
@@ -35,12 +36,12 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
             beforeInitialize: true,
             afterInitialize: false,
             beforeAddLiquidity: true,
-            beforeRemoveLiquidity: false,
-            afterAddLiquidity: true,
+            beforeRemoveLiquidity: true,
+            afterAddLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: false,
+            beforeSwap: true,
             afterSwap: false,
-            beforeDonate: false,
+            beforeDonate: true,
             afterDonate: false,
             beforeSwapReturnDelta: false,
             afterSwapReturnDelta: false,
@@ -62,6 +63,36 @@ contract Squid is BaseHook, TokenWhitelist, Ownable2Step {
     {
         _checkPoolTokensWhitelisted(key);
         return (this.beforeAddLiquidity.selector);
+    }
+
+    function _beforeRemoveLiquidity(address, PoolKey calldata key, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        view
+        override
+        returns (bytes4)
+    {
+        _checkPoolTokensWhitelisted(key);
+        return (this.beforeRemoveLiquidity.selector);
+    }
+
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
+        internal
+        view
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
+        _checkPoolTokensWhitelisted(key);
+        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    }
+
+    function _beforeDonate(address, PoolKey calldata key, uint256, uint256, bytes calldata)
+        internal
+        view
+        override
+        returns (bytes4)
+    {
+        _checkPoolTokensWhitelisted(key);
+        return (this.beforeDonate.selector);
     }
 
     // function _afterAddLiquidity(
