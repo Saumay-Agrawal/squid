@@ -17,27 +17,35 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
 import {SquidPositionTracker} from "./base/SquidPositionTracker.sol";
+import {SquidPoolMetrics} from "./base/SquidPoolMetrics.sol";
 import {TokenWhitelist} from "./libraries/TokenWhitelist.sol";
 import {UnichainSupportedTokens} from "./libraries/UnichainSupportedTokens.sol";
 
 // import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 // import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-contract Squid is BaseHook, SquidPositionTracker, TokenWhitelist, UnichainSupportedTokens, Ownable2Step {
+contract Squid is
+    BaseHook,
+    SquidPositionTracker,
+    SquidPoolMetrics,
+    TokenWhitelist,
+    UnichainSupportedTokens,
+    Ownable2Step
+{
     constructor(IPoolManager _manager, address initialOwner) BaseHook(_manager) Ownable(initialOwner) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true,
-            afterInitialize: false,
+            afterInitialize: true,
             beforeAddLiquidity: true,
             beforeRemoveLiquidity: true,
             afterAddLiquidity: true,
             afterRemoveLiquidity: true,
             beforeSwap: true,
-            afterSwap: false,
+            afterSwap: true,
             beforeDonate: true,
-            afterDonate: false,
+            afterDonate: true,
             beforeSwapReturnDelta: false,
             afterSwapReturnDelta: false,
             afterAddLiquidityReturnDelta: false,
@@ -48,6 +56,15 @@ contract Squid is BaseHook, SquidPositionTracker, TokenWhitelist, UnichainSuppor
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal view override returns (bytes4) {
         _checkPoolCurrenciesAllowed(key);
         return (this.beforeInitialize.selector);
+    }
+
+    function _afterInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96, int24 tick)
+        internal
+        override
+        returns (bytes4)
+    {
+        _trackPoolInitialized(key, sqrtPriceX96, tick);
+        return (this.afterInitialize.selector);
     }
 
     function _beforeAddLiquidity(address, PoolKey calldata key, ModifyLiquidityParams calldata, bytes calldata)
@@ -99,6 +116,7 @@ contract Squid is BaseHook, SquidPositionTracker, TokenWhitelist, UnichainSuppor
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         _trackLiquidityChange(sender, key, params, delta);
+        _trackPoolLiquidityChange(sender, key, params, delta);
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -111,7 +129,26 @@ contract Squid is BaseHook, SquidPositionTracker, TokenWhitelist, UnichainSuppor
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         _trackLiquidityChange(sender, key, params, delta);
+        _trackPoolLiquidityChange(sender, key, params, delta);
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+    }
+
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata)
+        internal
+        override
+        returns (bytes4, int128)
+    {
+        _trackPoolSwap(key, params, delta);
+        return (this.afterSwap.selector, 0);
+    }
+
+    function _afterDonate(address, PoolKey calldata key, uint256 amount0, uint256 amount1, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
+        _trackPoolDonate(key, amount0, amount1);
+        return (this.afterDonate.selector);
     }
 
     function _checkPoolCurrenciesAllowed(PoolKey calldata key) internal view {
@@ -158,7 +195,7 @@ contract Squid is BaseHook, SquidPositionTracker, TokenWhitelist, UnichainSuppor
         _removeWhitelistedTokens(tokens);
     }
 
-    function _poolManager() internal view override returns (IPoolManager) {
+    function _poolManager() internal view override(SquidPositionTracker, SquidPoolMetrics) returns (IPoolManager) {
         return poolManager;
     }
 }
