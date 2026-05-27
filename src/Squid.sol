@@ -18,6 +18,7 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 
 import {SquidPositionTracker} from "./base/SquidPositionTracker.sol";
 import {SquidPoolMetrics} from "./base/SquidPoolMetrics.sol";
+import {SquidLpProfiles} from "./base/SquidLpProfiles.sol";
 import {TokenWhitelist} from "./libraries/TokenWhitelist.sol";
 import {UnichainSupportedTokens} from "./libraries/UnichainSupportedTokens.sol";
 
@@ -28,6 +29,7 @@ contract Squid is
     BaseHook,
     SquidPositionTracker,
     SquidPoolMetrics,
+    SquidLpProfiles,
     TokenWhitelist,
     UnichainSupportedTokens,
     Ownable2Step
@@ -117,6 +119,7 @@ contract Squid is
     ) internal override returns (bytes4, BalanceDelta) {
         _trackLiquidityChange(sender, key, params, delta);
         _trackPoolLiquidityChange(sender, key, params, delta);
+        _trackLpProfileLiquidityChange(sender, key, params, delta);
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -130,6 +133,7 @@ contract Squid is
     ) internal override returns (bytes4, BalanceDelta) {
         _trackLiquidityChange(sender, key, params, delta);
         _trackPoolLiquidityChange(sender, key, params, delta);
+        _trackLpProfileLiquidityChange(sender, key, params, delta);
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -195,7 +199,12 @@ contract Squid is
         _removeWhitelistedTokens(tokens);
     }
 
-    function _poolManager() internal view override(SquidPositionTracker, SquidPoolMetrics) returns (IPoolManager) {
+    function _poolManager()
+        internal
+        view
+        override(SquidPositionTracker, SquidPoolMetrics, SquidLpProfiles)
+        returns (IPoolManager)
+    {
         return poolManager;
     }
 }
