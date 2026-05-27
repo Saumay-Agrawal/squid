@@ -5,7 +5,6 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 abstract contract TokenWhitelist {
-
     mapping(address token => bool allowed) internal _isWhitelistedToken;
     address[] internal _whitelistedTokens;
 
@@ -98,7 +97,6 @@ abstract contract TokenWhitelist {
     }
 
     function _checkPoolTokensWhitelisted(PoolKey calldata key) internal view {
-        
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 

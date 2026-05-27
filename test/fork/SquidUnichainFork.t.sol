@@ -37,7 +37,8 @@ contract SquidUnichainForkTest is Deployers {
         manager = IPoolManager(UNICHAIN_V4_POOL_MANAGER);
 
         uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_DONATE_FLAG;
+            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
+            | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_DONATE_FLAG;
         hook = Squid(address(uint160(type(uint160).max & clearAllHookPermissionsMask | flags)));
         deployCodeTo("Squid", abi.encode(manager, admin), address(hook));
 

@@ -2,34 +2,28 @@
 pragma solidity ^0.8.13;
 
 import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
-import {ERC1155} from "solmate/src/tokens/ERC1155.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {PoolId} from "v4-core/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {SwapParams} from "v4-core/types/PoolOperation.sol";
 import {ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
-import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
+import {Currency} from "v4-core/types/Currency.sol";
 
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
-import {Position} from "./types/Position.sol";
-
+import {SquidPositionTracker} from "./base/SquidPositionTracker.sol";
 import {TokenWhitelist} from "./libraries/TokenWhitelist.sol";
 import {UnichainSupportedTokens} from "./libraries/UnichainSupportedTokens.sol";
 
 // import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 // import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-contract Squid is BaseHook, TokenWhitelist, UnichainSupportedTokens, Ownable2Step {
-    address[] public lps;
-    mapping(address => Position) public lpPositions;
-
+contract Squid is BaseHook, SquidPositionTracker, TokenWhitelist, UnichainSupportedTokens, Ownable2Step {
     constructor(IPoolManager _manager, address initialOwner) BaseHook(_manager) Ownable(initialOwner) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -38,8 +32,8 @@ contract Squid is BaseHook, TokenWhitelist, UnichainSupportedTokens, Ownable2Ste
             afterInitialize: false,
             beforeAddLiquidity: true,
             beforeRemoveLiquidity: true,
-            afterAddLiquidity: false,
-            afterRemoveLiquidity: false,
+            afterAddLiquidity: true,
+            afterRemoveLiquidity: true,
             beforeSwap: true,
             afterSwap: false,
             beforeDonate: true,
@@ -96,6 +90,30 @@ contract Squid is BaseHook, TokenWhitelist, UnichainSupportedTokens, Ownable2Ste
         return (this.beforeDonate.selector);
     }
 
+    function _afterAddLiquidity(
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta,
+        bytes calldata
+    ) internal override returns (bytes4, BalanceDelta) {
+        _trackLiquidityChange(sender, key, params, delta);
+        return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+    }
+
+    function _afterRemoveLiquidity(
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta,
+        bytes calldata
+    ) internal override returns (bytes4, BalanceDelta) {
+        _trackLiquidityChange(sender, key, params, delta);
+        return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+    }
+
     function _checkPoolCurrenciesAllowed(PoolKey calldata key) internal view {
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
@@ -110,31 +128,6 @@ contract Squid is BaseHook, TokenWhitelist, UnichainSupportedTokens, Ownable2Ste
             revert PoolTokensNotWhitelisted(token0, token1);
         }
     }
-
-    // function _afterAddLiquidity(
-    //     address sender,
-    //     PoolKey calldata key,
-    //     ModifyLiquidityParams calldata params,
-    //     BalanceDelta delta,
-    //     BalanceDelta feesAccrued,
-    //     bytes calldata hookData
-    // ) internal override returns (bytes4, BalanceDelta) {
-
-    //     lps.push(sender);
-    //     lpPositions[sender] = Position({
-    //         owner: sender,
-    //         poolKey: key,
-    //         poolId: key.toId(),
-    //         token0: Currency.unwrap(key.currency0),
-    //         token1: Currency.unwrap(key.currency1),
-    //         amount0Deposited: _absInt128(delta.amount0()),
-    //         amount1Deposited: _absInt128(delta.amount1()),
-    //         amount0DepositedUSD: _absInt128(delta.amount0()) * price,
-    //         amount1DepositedUSD: _absInt128(delta.amount1()) * price
-    //     });
-
-    //     return (this.afterAddLiquidity.selector, BalanceDelta.wrap(0));
-    // }
 
     /********* WHITELIST LOGIC *********/
 
@@ -165,9 +158,7 @@ contract Squid is BaseHook, TokenWhitelist, UnichainSupportedTokens, Ownable2Ste
         _removeWhitelistedTokens(tokens);
     }
 
-    /********* UTILITY LOGIC *********/
-
-    function _absInt128(int128 x) internal pure returns (uint256) {
-        return x < 0 ? uint256(uint128(-x)) : uint256(uint128(x));
+    function _poolManager() internal view override returns (IPoolManager) {
+        return poolManager;
     }
 }
