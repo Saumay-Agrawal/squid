@@ -1,18 +1,23 @@
-# Compiler files
-cache/
-out/
+# Foundry build output
+/contracts/cache/
+/contracts/out/
 
-# Dependencies
-lib/
-remappings.txt
+# Foundry dependencies
+/contracts/lib/*
+!/contracts/lib/v4-hooks-public/
+/contracts/remappings.txt
 
 # Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+!/contracts/broadcast
+/contracts/broadcast/*/31337/
+/contracts/broadcast/**/dry-run/
 
 # Docs
-docs/
+/docs/
 
-# Dotenv file
+# Environment files
 .env
+.env.*
+
+# macOS
+.DS_Store
