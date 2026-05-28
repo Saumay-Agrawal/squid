@@ -2,14 +2,18 @@
 pragma solidity ^0.8.13;
 
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 import {PoolMetrics} from "../src/types/PoolMetrics.sol";
+import {PoolSummary} from "../src/types/PoolSummary.sol";
 import {SquidTestBase} from "./base/SquidTestBase.sol";
 
 contract SquidPoolMetricsTest is SquidTestBase {
+    using PoolIdLibrary for PoolKey;
+
     function test_TracksPoolInitializationMetrics() public {
         PoolKey memory key = _initializeWhitelistedPool();
 
@@ -129,5 +133,76 @@ contract SquidPoolMetricsTest is SquidTestBase {
         assertEq(metrics.donateCount, 1);
         assertEq(metrics.amount0Donated, 1_000);
         assertEq(metrics.amount1Donated, 2_000);
+    }
+
+    function test_RegistersInitializedPoolsAndSupportsPagination() public {
+        PoolKey memory firstKey = _initializeWhitelistedPool();
+        PoolKey memory secondKey = _poolKey(token0, token1, 500, 10);
+        manager.initialize(secondKey, SQRT_PRICE_1_1);
+
+        assertEq(hook.getPoolCount(), 2);
+        assertEq(PoolId.unwrap(hook.getPoolIdAt(0)), PoolId.unwrap(firstKey.toId()));
+        assertEq(PoolId.unwrap(hook.getPoolIdAt(1)), PoolId.unwrap(secondKey.toId()));
+
+        PoolId[] memory ids = hook.getPoolIds(0, 10);
+        assertEq(ids.length, 2);
+        assertEq(PoolId.unwrap(ids[0]), PoolId.unwrap(firstKey.toId()));
+        assertEq(PoolId.unwrap(ids[1]), PoolId.unwrap(secondKey.toId()));
+
+        ids = hook.getPoolIds(1, 1);
+        assertEq(ids.length, 1);
+        assertEq(PoolId.unwrap(ids[0]), PoolId.unwrap(secondKey.toId()));
+
+        ids = hook.getPoolIds(2, 1);
+        assertEq(ids.length, 0);
+    }
+
+    function test_DoesNotDuplicatePoolRegistryEntriesAfterActivity() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+        modifyLiquidityRouter.modifyLiquidity(key, REMOVE_LIQUIDITY_PARAMS, ZERO_BYTES);
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        assertEq(hook.getPoolCount(), 1);
+        assertEq(PoolId.unwrap(hook.getPoolIdAt(0)), PoolId.unwrap(key.toId()));
+    }
+
+    function test_ReturnsPaginatedPoolSummaries() public {
+        PoolKey memory firstKey = _initializeWhitelistedPool();
+        modifyLiquidityRouter.modifyLiquidity(firstKey, LIQUIDITY_PARAMS, ZERO_BYTES);
+        swapRouter.swap(
+            firstKey,
+            SwapParams({zeroForOne: true, amountSpecified: -10 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        PoolKey memory secondKey = _poolKey(token0, token1, 500, 10);
+        manager.initialize(secondKey, SQRT_PRICE_1_1);
+
+        PoolSummary[] memory summaries = hook.getPoolSummaries(0, 10);
+        assertEq(summaries.length, 2);
+        assertEq(PoolId.unwrap(summaries[0].poolId), PoolId.unwrap(firstKey.toId()));
+        assertEq(summaries[0].currency0, Currency.unwrap(firstKey.currency0));
+        assertEq(summaries[0].currency1, Currency.unwrap(firstKey.currency1));
+        assertEq(summaries[0].fee, firstKey.fee);
+        assertEq(summaries[0].tickSpacing, firstKey.tickSpacing);
+        assertEq(summaries[0].activeLpCount, 1);
+        assertEq(summaries[0].activePositionCount, 1);
+        assertEq(summaries[0].trackedLiquidity, uint128(uint256(LIQUIDITY_PARAMS.liquidityDelta)));
+        assertEq(summaries[0].swapCount, 1);
+
+        assertEq(PoolId.unwrap(summaries[1].poolId), PoolId.unwrap(secondKey.toId()));
+        assertEq(summaries[1].fee, secondKey.fee);
+        assertEq(summaries[1].tickSpacing, secondKey.tickSpacing);
+        assertEq(summaries[1].activeLpCount, 0);
+        assertEq(summaries[1].activePositionCount, 0);
+        assertEq(summaries[1].trackedLiquidity, 0);
+        assertEq(summaries[1].swapCount, 0);
+
+        summaries = hook.getPoolSummaries(1, 1);
+        assertEq(summaries.length, 1);
+        assertEq(PoolId.unwrap(summaries[0].poolId), PoolId.unwrap(secondKey.toId()));
     }
 }

@@ -19,5 +19,9 @@
 .env
 .env.*
 
+# Local deployment artifacts
+/deployments/*.json
+!/deployments/.gitkeep
+
 # macOS
 .DS_Store

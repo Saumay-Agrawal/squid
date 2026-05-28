@@ -1,0 +1,21 @@
+{
+  "chainId": 31337,
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "poolManagerAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "rpcUrl": "http://127.0.0.1:8545",
+  "seededPoolFees": [
+    3000,
+    500
+  ],
+  "seededPoolIds": [
+    "0x5957a179c070f459eab9c6abf761409d5dd727cef702d38af954a8fdbe653729",
+    "0x6b8eef9a349d3f3e1d1b7c0469edb03febaf9457e0d6fd611fc4e12b6e8e2eac"
+  ],
+  "seededPoolTickSpacings": [
+    60,
+    10
+  ],
+  "squidAddress": "0x30F31795292854C8cce1297C778020Be4965bfF0",
+  "usdcAddress": "0x078D782b760474a361dDA0AF3839290b0EF57AD6",
+  "wethAddress": "0x4200000000000000000000000000000000000006"
+}

@@ -6,6 +6,8 @@
   ],
   "scripts": {
     "contracts:build": "forge build --root contracts",
+    "contracts:seed:anvil": "forge script --root contracts script/SeedLocalAnvil.s.sol:SeedLocalAnvilScript --rpc-url http://127.0.0.1:8545 --broadcast --always-use-create-2-factory",
+    "deployment:validate": "node scripts/validate-local-deployment.mjs",
     "contracts:test": "forge test --root contracts",
     "contracts:test:fork": "forge test --root contracts --match-path 'test/fork/*.t.sol' -vv",
     "docker:up": "docker compose up --build",

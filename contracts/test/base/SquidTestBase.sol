@@ -133,10 +133,16 @@ abstract contract SquidTestBase is Test, Deployers {
     }
 
     function _poolKey(Currency currency0, Currency currency1) internal view returns (PoolKey memory) {
+        return _poolKey(currency0, currency1, 3000, 60);
+    }
+
+    function _poolKey(Currency currency0, Currency currency1, uint24 fee, int24 tickSpacing)
+        internal
+        view
+        returns (PoolKey memory)
+    {
         return
-            PoolKey({
-                currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(hook))
-            });
+            PoolKey({currency0: currency0, currency1: currency1, fee: fee, tickSpacing: tickSpacing, hooks: IHooks(address(hook))});
     }
 
     function _sort(Currency currencyA, Currency currencyB) internal pure returns (Currency, Currency) {

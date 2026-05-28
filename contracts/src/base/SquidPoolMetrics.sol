@@ -10,6 +10,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {PoolMetrics} from "../types/PoolMetrics.sol";
+import {PoolSummary} from "../types/PoolSummary.sol";
 
 abstract contract SquidPoolMetrics {
     using PoolIdLibrary for PoolKey;
@@ -25,6 +26,8 @@ abstract contract SquidPoolMetrics {
     }
 
     mapping(PoolId poolId => PoolMetrics) internal poolMetrics;
+    PoolId[] internal poolIds;
+    mapping(PoolId poolId => bool seen) internal poolRegistrySeen;
     mapping(PoolId poolId => mapping(address owner => bool seen)) internal poolLpSeen;
     mapping(PoolId poolId => mapping(address owner => uint256 activePositionCount)) internal poolLpActivePositions;
     mapping(PoolId poolId => mapping(bytes32 positionId => MetricPosition)) internal metricPositions;
@@ -36,6 +39,53 @@ abstract contract SquidPoolMetrics {
 
     function getPoolMetricsById(PoolId poolId) external view returns (PoolMetrics memory) {
         return poolMetrics[poolId];
+    }
+
+    function getPoolCount() external view returns (uint256) {
+        return poolIds.length;
+    }
+
+    function getPoolIdAt(uint256 index) external view returns (PoolId) {
+        return poolIds[index];
+    }
+
+    function getPoolIds(uint256 offset, uint256 limit) external view returns (PoolId[] memory ids) {
+        uint256 count = poolIds.length;
+        if (offset >= count || limit == 0) {
+            return new PoolId[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > count) {
+            end = count;
+        }
+
+        ids = new PoolId[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            ids[i - offset] = poolIds[i];
+        }
+    }
+
+    function getPoolSummaryById(PoolId poolId) external view returns (PoolSummary memory) {
+        return _poolSummary(poolId, poolMetrics[poolId]);
+    }
+
+    function getPoolSummaries(uint256 offset, uint256 limit) external view returns (PoolSummary[] memory summaries) {
+        uint256 count = poolIds.length;
+        if (offset >= count || limit == 0) {
+            return new PoolSummary[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > count) {
+            end = count;
+        }
+
+        summaries = new PoolSummary[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            PoolId poolId = poolIds[i];
+            summaries[i - offset] = _poolSummary(poolId, poolMetrics[poolId]);
+        }
     }
 
     function _trackPoolInitialized(PoolKey calldata key, uint160 sqrtPriceX96, int24 tick) internal {
@@ -52,6 +102,11 @@ abstract contract SquidPoolMetrics {
             metrics.initialSqrtPriceX96 = sqrtPriceX96;
             metrics.initialTick = tick;
             metrics.initializedAtBlock = block.number;
+        }
+
+        if (!poolRegistrySeen[poolId]) {
+            poolRegistrySeen[poolId] = true;
+            poolIds.push(poolId);
         }
     }
 
@@ -179,6 +234,21 @@ abstract contract SquidPoolMetrics {
 
     function _absMetricInt128(int128 x) private pure returns (uint256) {
         return x < 0 ? uint256(uint128(-x)) : uint256(uint128(x));
+    }
+
+    function _poolSummary(PoolId poolId, PoolMetrics storage metrics) private view returns (PoolSummary memory) {
+        return PoolSummary({
+            poolId: poolId,
+            currency0: metrics.currency0,
+            currency1: metrics.currency1,
+            fee: metrics.fee,
+            tickSpacing: metrics.tickSpacing,
+            initializedAtBlock: metrics.initializedAtBlock,
+            activeLpCount: metrics.activeLpCount,
+            activePositionCount: metrics.activePositionCount,
+            trackedLiquidity: metrics.trackedLiquidity,
+            swapCount: metrics.swapCount
+        });
     }
 
     function _absMetricInt256ToUint128(int256 x) private pure returns (uint128) {
