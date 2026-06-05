@@ -9,6 +9,7 @@ import {Currency} from "v4-core/types/Currency.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
+import {PoolPriceMath} from "../libraries/PoolPriceMath.sol";
 import {PoolMetrics} from "../types/PoolMetrics.sol";
 import {PoolSummary} from "../types/PoolSummary.sol";
 
@@ -17,12 +18,26 @@ abstract contract SquidPoolMetrics {
 
     error InvalidMetricLiquidityDelta();
 
+    uint256 internal constant TWAP_WINDOW = 30 minutes;
+
     struct MetricPosition {
         bool active;
         bool seen;
         uint128 liquidity;
         uint256 amount0Deposited;
         uint256 amount1Deposited;
+        uint256 openedAtTimestamp;
+    }
+
+    struct PriceObservation {
+        uint256 timestamp;
+        uint256 priceCumulativeX18;
+        uint256 spotPriceX18;
+    }
+
+    struct PoolAgeState {
+        uint256 activePositionAgeSum;
+        uint256 lastAgeUpdateTimestamp;
     }
 
     mapping(PoolId poolId => PoolMetrics) internal poolMetrics;
@@ -31,6 +46,9 @@ abstract contract SquidPoolMetrics {
     mapping(PoolId poolId => mapping(address owner => bool seen)) internal poolLpSeen;
     mapping(PoolId poolId => mapping(address owner => uint256 activePositionCount)) internal poolLpActivePositions;
     mapping(PoolId poolId => mapping(bytes32 positionId => MetricPosition)) internal metricPositions;
+    mapping(PoolId poolId => PriceObservation[]) internal poolPriceObservations;
+    mapping(PoolId poolId => uint256 observationStartIndex) internal poolPriceObservationStartIndex;
+    mapping(PoolId poolId => PoolAgeState) internal poolAgeStates;
 
     function getPoolMetrics(PoolKey calldata key) external view returns (PoolMetrics memory) {
         PoolKey memory keyMemory = key;
@@ -102,6 +120,8 @@ abstract contract SquidPoolMetrics {
             metrics.initialSqrtPriceX96 = sqrtPriceX96;
             metrics.initialTick = tick;
             metrics.initializedAtBlock = block.number;
+            _initializePoolPriceMetrics(poolId, metrics, sqrtPriceX96);
+            poolAgeStates[poolId].lastAgeUpdateTimestamp = block.timestamp;
         }
 
         if (!poolRegistrySeen[poolId]) {
@@ -130,8 +150,11 @@ abstract contract SquidPoolMetrics {
 
         if (!position.seen) {
             position.seen = true;
+            position.openedAtTimestamp = block.timestamp;
             metrics.lifetimePositionCount++;
         }
+
+        _accruePoolAge(poolId, metrics);
 
         if (params.liquidityDelta > 0) {
             _trackPoolLiquidityIncrease(metrics, position, delta);
@@ -144,6 +167,7 @@ abstract contract SquidPoolMetrics {
         if (!position.active && liveLiquidity > 0) {
             position.active = true;
             metrics.activePositionCount++;
+            poolAgeStates[poolId].activePositionAgeSum += block.timestamp - position.openedAtTimestamp;
             if (poolLpActivePositions[poolId][owner] == 0) {
                 metrics.activeLpCount++;
             }
@@ -155,6 +179,7 @@ abstract contract SquidPoolMetrics {
             }
         } else if (position.active && liveLiquidity == 0) {
             position.active = false;
+            poolAgeStates[poolId].activePositionAgeSum -= block.timestamp - position.openedAtTimestamp;
             metrics.activePositionCount--;
             poolLpActivePositions[poolId][owner]--;
             if (poolLpActivePositions[poolId][owner] == 0) {
@@ -162,12 +187,18 @@ abstract contract SquidPoolMetrics {
             }
         }
 
+        metrics.averageLpAge = metrics.activePositionCount == 0
+            ? 0
+            : poolAgeStates[poolId].activePositionAgeSum / metrics.activePositionCount;
+
         if (liveLiquidity >= oldLiquidity) {
             metrics.trackedLiquidity += liveLiquidity - oldLiquidity;
         } else {
             metrics.trackedLiquidity -= oldLiquidity - liveLiquidity;
         }
         position.liquidity = liveLiquidity;
+
+        _updatePoolPriceMetrics(poolId);
     }
 
     function _trackPoolSwap(PoolKey calldata key, SwapParams calldata, BalanceDelta delta) internal {
@@ -177,6 +208,7 @@ abstract contract SquidPoolMetrics {
         metrics.swapCount++;
         metrics.volume0 += _absMetricInt128(delta.amount0());
         metrics.volume1 += _absMetricInt128(delta.amount1());
+        _updatePoolPriceMetrics(keyMemory.toId());
     }
 
     function _trackPoolDonate(PoolKey calldata key, uint256 amount0, uint256 amount1) internal {
@@ -186,6 +218,7 @@ abstract contract SquidPoolMetrics {
         metrics.donateCount++;
         metrics.amount0Donated += amount0;
         metrics.amount1Donated += amount1;
+        _updatePoolPriceMetrics(keyMemory.toId());
     }
 
     function _poolManager() internal view virtual returns (IPoolManager);
@@ -247,8 +280,164 @@ abstract contract SquidPoolMetrics {
             activeLpCount: metrics.activeLpCount,
             activePositionCount: metrics.activePositionCount,
             trackedLiquidity: metrics.trackedLiquidity,
-            swapCount: metrics.swapCount
+            swapCount: metrics.swapCount,
+            spotPriceX18: metrics.spotPriceX18,
+            twapPriceX18: metrics.twapPriceX18,
+            volatilityBps: metrics.volatilityBps,
+            averageLpAge: metrics.averageLpAge
         });
+    }
+
+    function _accruePoolAge(PoolId poolId, PoolMetrics storage metrics) private {
+        PoolAgeState storage ageState = poolAgeStates[poolId];
+        uint256 currentTimestamp = block.timestamp;
+        uint256 elapsed = currentTimestamp - ageState.lastAgeUpdateTimestamp;
+
+        if (elapsed > 0 && metrics.activePositionCount > 0) {
+            ageState.activePositionAgeSum += elapsed * metrics.activePositionCount;
+        }
+
+        ageState.lastAgeUpdateTimestamp = currentTimestamp;
+    }
+
+    function _initializePoolPriceMetrics(PoolId poolId, PoolMetrics storage metrics, uint160 sqrtPriceX96) private {
+        uint256 spotPriceX18 = PoolPriceMath.spotPriceX18(sqrtPriceX96);
+        uint256 currentTimestamp = block.timestamp;
+
+        metrics.spotPriceX18 = spotPriceX18;
+        metrics.twapPriceX18 = spotPriceX18;
+        metrics.lastPriceTimestamp = currentTimestamp;
+
+        poolPriceObservations[poolId].push(
+            PriceObservation({timestamp: currentTimestamp, priceCumulativeX18: 0, spotPriceX18: spotPriceX18})
+        );
+    }
+
+    function _updatePoolPriceMetrics(PoolId poolId) private {
+        PoolMetrics storage metrics = poolMetrics[poolId];
+        if (!metrics.initialized) return;
+
+        (uint160 sqrtPriceX96,,,) = StateLibrary.getSlot0(_poolManager(), poolId);
+
+        uint256 currentTimestamp = block.timestamp;
+        uint256 elapsed = currentTimestamp - metrics.lastPriceTimestamp;
+        if (elapsed > 0) {
+            metrics.priceCumulativeX18 += metrics.spotPriceX18 * elapsed;
+        }
+
+        uint256 spotPriceX18 = PoolPriceMath.spotPriceX18(sqrtPriceX96);
+        metrics.lastPriceTimestamp = currentTimestamp;
+
+        _upsertPriceObservation(poolId, currentTimestamp, metrics.priceCumulativeX18, spotPriceX18);
+
+        uint256 twapPriceX18 = _twapPriceX18(poolId, currentTimestamp, metrics.priceCumulativeX18, spotPriceX18);
+
+        metrics.spotPriceX18 = spotPriceX18;
+        metrics.twapPriceX18 = twapPriceX18;
+        metrics.volatilityBps = PoolPriceMath.volatilityBps(spotPriceX18, twapPriceX18);
+
+        _prunePriceObservations(poolId, currentTimestamp);
+    }
+
+    function _upsertPriceObservation(
+        PoolId poolId,
+        uint256 currentTimestamp,
+        uint256 priceCumulativeX18,
+        uint256 spotPriceX18
+    ) private {
+        PriceObservation[] storage observations = poolPriceObservations[poolId];
+        uint256 observationCount = observations.length;
+
+        if (observationCount > 0 && observations[observationCount - 1].timestamp == currentTimestamp) {
+            PriceObservation storage observation = observations[observationCount - 1];
+            observation.priceCumulativeX18 = priceCumulativeX18;
+            observation.spotPriceX18 = spotPriceX18;
+            return;
+        }
+
+        observations.push(
+            PriceObservation({
+                timestamp: currentTimestamp,
+                priceCumulativeX18: priceCumulativeX18,
+                spotPriceX18: spotPriceX18
+            })
+        );
+    }
+
+    function _twapPriceX18(PoolId poolId, uint256 currentTimestamp, uint256 currentCumulativeX18, uint256 spotPriceX18)
+        private
+        view
+        returns (uint256)
+    {
+        PriceObservation[] storage observations = poolPriceObservations[poolId];
+        uint256 startIndex = poolPriceObservationStartIndex[poolId];
+        if (observations.length == 0 || startIndex >= observations.length) {
+            return spotPriceX18;
+        }
+
+        uint256 windowStart = currentTimestamp > TWAP_WINDOW ? currentTimestamp - TWAP_WINDOW : 0;
+        uint256 twapStartTimestamp = observations[startIndex].timestamp;
+        uint256 startCumulativeX18 = observations[startIndex].priceCumulativeX18;
+
+        if (windowStart > twapStartTimestamp) {
+            (twapStartTimestamp, startCumulativeX18) = _cumulativePriceAt(poolId, windowStart);
+        }
+
+        uint256 twapDuration = currentTimestamp - twapStartTimestamp;
+        if (twapDuration == 0) {
+            return spotPriceX18;
+        }
+
+        return (currentCumulativeX18 - startCumulativeX18) / twapDuration;
+    }
+
+    function _cumulativePriceAt(PoolId poolId, uint256 targetTimestamp) private view returns (uint256, uint256) {
+        PriceObservation[] storage observations = poolPriceObservations[poolId];
+        uint256 startIndex = poolPriceObservationStartIndex[poolId];
+        uint256 observationCount = observations.length;
+
+        if (observationCount == 0 || startIndex >= observationCount) {
+            return (targetTimestamp, 0);
+        }
+
+        PriceObservation storage observation = observations[startIndex];
+        if (targetTimestamp <= observation.timestamp) {
+            return (observation.timestamp, observation.priceCumulativeX18);
+        }
+
+        for (uint256 i = startIndex; i < observationCount - 1; i++) {
+            PriceObservation storage currentObservation = observations[i];
+            PriceObservation storage nextObservation = observations[i + 1];
+
+            if (targetTimestamp < nextObservation.timestamp) {
+                return (
+                    targetTimestamp,
+                    currentObservation.priceCumulativeX18
+                        + currentObservation.spotPriceX18 * (targetTimestamp - currentObservation.timestamp)
+                );
+            }
+        }
+
+        PriceObservation storage lastObservation = observations[observationCount - 1];
+        return (
+            targetTimestamp,
+            lastObservation.priceCumulativeX18 + lastObservation.spotPriceX18 * (targetTimestamp - lastObservation.timestamp)
+        );
+    }
+
+    function _prunePriceObservations(PoolId poolId, uint256 currentTimestamp) private {
+        uint256 windowStart = currentTimestamp > TWAP_WINDOW ? currentTimestamp - TWAP_WINDOW : 0;
+        PriceObservation[] storage observations = poolPriceObservations[poolId];
+        uint256 observationCount = observations.length;
+
+        if (observationCount < 2) return;
+
+        uint256 startIndex = poolPriceObservationStartIndex[poolId];
+        while (startIndex + 1 < observationCount && observations[startIndex + 1].timestamp <= windowStart) {
+            startIndex++;
+        }
+
+        poolPriceObservationStartIndex[poolId] = startIndex;
     }
 
     function _absMetricInt256ToUint128(int256 x) private pure returns (uint128) {

@@ -27,6 +27,12 @@ contract SquidPoolMetricsTest is SquidTestBase {
         assertEq(metrics.initialSqrtPriceX96, SQRT_PRICE_1_1);
         assertEq(metrics.initialTick, 0);
         assertEq(metrics.initializedAtBlock, block.number);
+        assertEq(metrics.spotPriceX18, 1e18);
+        assertEq(metrics.twapPriceX18, 1e18);
+        assertEq(metrics.volatilityBps, 0);
+        assertEq(metrics.priceCumulativeX18, 0);
+        assertEq(metrics.lastPriceTimestamp, block.timestamp);
+        assertEq(metrics.averageLpAge, 0);
     }
 
     function test_TracksLiquidityMetricsForActiveAndLifetimeState() public {
@@ -133,6 +139,98 @@ contract SquidPoolMetricsTest is SquidTestBase {
         assertEq(metrics.donateCount, 1);
         assertEq(metrics.amount0Donated, 1_000);
         assertEq(metrics.amount1Donated, 2_000);
+        assertGt(metrics.spotPriceX18, 0);
+        assertGt(metrics.twapPriceX18, 0);
+    }
+
+    function test_TracksSpotTwapAndVolatilityAcrossActivity() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        vm.warp(block.timestamp + 15 minutes);
+
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -10 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        PoolMetrics memory metrics = hook.getPoolMetrics(key);
+        uint256 spotAfterSwap = metrics.spotPriceX18;
+
+        assertEq(metrics.twapPriceX18, 1e18);
+        assertTrue(spotAfterSwap != 1e18);
+        assertGt(metrics.volatilityBps, 0);
+        assertEq(metrics.priceCumulativeX18, 1e18 * 15 minutes);
+
+        vm.warp(block.timestamp + 15 minutes);
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.twapPriceX18, (1e18 + spotAfterSwap) / 2);
+        assertGt(metrics.volatilityBps, 0);
+
+        vm.warp(block.timestamp + 30 minutes);
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.twapPriceX18, spotAfterSwap);
+        assertEq(metrics.volatilityBps, 0);
+    }
+
+    function test_TracksAverageLpAgeAcrossActivePositions() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+        ModifyLiquidityParams memory secondPosition = ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: LIQUIDITY_PARAMS.liquidityDelta,
+            salt: bytes32(uint256(1))
+        });
+        ModifyLiquidityParams memory removeFirstPosition = REMOVE_LIQUIDITY_PARAMS;
+
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        PoolMetrics memory metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.averageLpAge, 0);
+
+        vm.warp(block.timestamp + 10 minutes);
+        modifyLiquidityRouter.modifyLiquidity(key, secondPosition, ZERO_BYTES);
+
+        metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.averageLpAge, 5 minutes);
+
+        vm.warp(block.timestamp + 20 minutes);
+        modifyLiquidityRouter.modifyLiquidity(key, secondPosition, ZERO_BYTES);
+
+        metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.averageLpAge, 25 minutes);
+
+        modifyLiquidityRouter.modifyLiquidity(key, removeFirstPosition, ZERO_BYTES);
+
+        metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.activePositionCount, 1);
+        assertEq(metrics.averageLpAge, 20 minutes);
+    }
+
+    function test_AverageLpAgeUsesFirstOpenOnReactivation() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        vm.warp(block.timestamp + 10 minutes);
+        modifyLiquidityRouter.modifyLiquidity(key, REMOVE_LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        PoolMetrics memory metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.activePositionCount, 0);
+        assertEq(metrics.averageLpAge, 0);
+
+        vm.warp(block.timestamp + 5 minutes);
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        metrics = hook.getPoolMetrics(key);
+        assertEq(metrics.activePositionCount, 1);
+        assertEq(metrics.averageLpAge, 15 minutes);
     }
 
     function test_RegistersInitializedPoolsAndSupportsPagination() public {
@@ -192,6 +290,8 @@ contract SquidPoolMetricsTest is SquidTestBase {
         assertEq(summaries[0].activePositionCount, 1);
         assertEq(summaries[0].trackedLiquidity, uint128(uint256(LIQUIDITY_PARAMS.liquidityDelta)));
         assertEq(summaries[0].swapCount, 1);
+        assertGt(summaries[0].spotPriceX18, 0);
+        assertGt(summaries[0].twapPriceX18, 0);
 
         assertEq(PoolId.unwrap(summaries[1].poolId), PoolId.unwrap(secondKey.toId()));
         assertEq(summaries[1].fee, secondKey.fee);
@@ -200,6 +300,10 @@ contract SquidPoolMetricsTest is SquidTestBase {
         assertEq(summaries[1].activePositionCount, 0);
         assertEq(summaries[1].trackedLiquidity, 0);
         assertEq(summaries[1].swapCount, 0);
+        assertEq(summaries[1].spotPriceX18, 1e18);
+        assertEq(summaries[1].twapPriceX18, 1e18);
+        assertEq(summaries[1].volatilityBps, 0);
+        assertEq(summaries[1].averageLpAge, 0);
 
         summaries = hook.getPoolSummaries(1, 1);
         assertEq(summaries.length, 1);

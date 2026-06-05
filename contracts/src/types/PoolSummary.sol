@@ -14,4 +14,8 @@ struct PoolSummary {
     uint256 activePositionCount;
     uint128 trackedLiquidity;
     uint256 swapCount;
+    uint256 spotPriceX18;
+    uint256 twapPriceX18;
+    uint256 volatilityBps;
+    uint256 averageLpAge;
 }

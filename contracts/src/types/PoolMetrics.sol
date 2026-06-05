@@ -25,4 +25,10 @@ struct PoolMetrics {
     uint256 volume1;
     uint256 amount0Donated;
     uint256 amount1Donated;
+    uint256 spotPriceX18;
+    uint256 twapPriceX18;
+    uint256 volatilityBps;
+    uint256 priceCumulativeX18;
+    uint256 lastPriceTimestamp;
+    uint256 averageLpAge;
 }
