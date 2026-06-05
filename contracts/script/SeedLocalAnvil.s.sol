@@ -32,14 +32,13 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
 
     error SeedInvariantFailed(string reason);
 
+    uint256 internal constant POOL_COUNT = 4;
     uint256 internal constant DEFAULT_ANVIL_PRIVATE_KEY =
         0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     uint160 internal constant SQRT_PRICE_1_1 = Constants.SQRT_PRICE_1_1;
     uint160 internal constant SQRT_PRICE_1_2 = Constants.SQRT_PRICE_1_2;
-    int24 internal constant DEFAULT_TICK_LOWER = -120;
-    int24 internal constant DEFAULT_TICK_UPPER = 120;
     int128 internal constant DEFAULT_LIQUIDITY_DELTA = 1e18;
 
     struct DeploymentResult {
@@ -48,17 +47,28 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         address poolManager;
         address modifyLiquidityRouter;
         address modifyLiquidityNoChecks;
+        address auxiliaryModifyLiquidityRouter;
+        address auxiliaryModifyLiquidityNoChecks;
         address swapRouter;
         address donateRouter;
         address usdc;
         address weth;
-        PoolId firstPoolId;
-        PoolId secondPoolId;
+        PoolId[POOL_COUNT] poolIds;
+        uint24[POOL_COUNT] fees;
+        int24[POOL_COUNT] tickSpacings;
+    }
+
+    struct SeededPoolState {
+        PoolId[POOL_COUNT] poolIds;
+        uint24[POOL_COUNT] fees;
+        int24[POOL_COUNT] tickSpacings;
     }
 
     PoolManager internal manager;
     PoolModifyLiquidityTest internal modifyLiquidityRouter;
     PoolModifyLiquidityTestNoChecks internal modifyLiquidityNoChecks;
+    PoolModifyLiquidityTest internal auxiliaryModifyLiquidityRouter;
+    PoolModifyLiquidityTestNoChecks internal auxiliaryModifyLiquidityNoChecks;
     SwapRouterNoChecks internal swapRouterNoChecks;
     PoolSwapTest internal swapRouter;
     PoolDonateTest internal donateRouter;
@@ -127,28 +137,7 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         Currency currency0 = Currency.wrap(usdc);
         Currency currency1 = Currency.wrap(weth);
 
-        PoolKey memory firstPool = _poolKey(currency0, currency1, hook, 3000, 60);
-        PoolKey memory secondPool = _poolKey(currency0, currency1, hook, 500, 10);
-
-        manager.initialize(firstPool, SQRT_PRICE_1_1);
-        manager.initialize(secondPool, SQRT_PRICE_1_1);
-
-        ModifyLiquidityParams memory liquidityParams = ModifyLiquidityParams({
-            tickLower: DEFAULT_TICK_LOWER,
-            tickUpper: DEFAULT_TICK_UPPER,
-            liquidityDelta: DEFAULT_LIQUIDITY_DELTA,
-            salt: bytes32(0)
-        });
-
-        modifyLiquidityRouter.modifyLiquidity(firstPool, liquidityParams, Constants.ZERO_BYTES);
-        modifyLiquidityRouter.modifyLiquidity(secondPool, liquidityParams, Constants.ZERO_BYTES);
-
-        swapRouter.swap(
-            firstPool,
-            SwapParams({zeroForOne: true, amountSpecified: -1e15, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-            Constants.ZERO_BYTES
-        );
+        SeededPoolState memory seededPools = _initializeAndSeedPools(currency0, currency1, hook);
 
         deployment = DeploymentResult({
             deployer: deployer,
@@ -156,12 +145,15 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
             poolManager: address(manager),
             modifyLiquidityRouter: address(modifyLiquidityRouter),
             modifyLiquidityNoChecks: address(modifyLiquidityNoChecks),
+            auxiliaryModifyLiquidityRouter: address(auxiliaryModifyLiquidityRouter),
+            auxiliaryModifyLiquidityNoChecks: address(auxiliaryModifyLiquidityNoChecks),
             swapRouter: address(swapRouter),
             donateRouter: address(donateRouter),
             usdc: usdc,
             weth: weth,
-            firstPoolId: firstPool.toId(),
-            secondPoolId: secondPool.toId()
+            poolIds: seededPools.poolIds,
+            fees: seededPools.fees,
+            tickSpacings: seededPools.tickSpacings
         });
     }
 
@@ -171,6 +163,8 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         swapRouterNoChecks = new SwapRouterNoChecks(manager);
         modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
         modifyLiquidityNoChecks = new PoolModifyLiquidityTestNoChecks(manager);
+        auxiliaryModifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
+        auxiliaryModifyLiquidityNoChecks = new PoolModifyLiquidityTestNoChecks(manager);
         donateRouter = new PoolDonateTest(manager);
         takeRouter = new PoolTakeTest(manager);
         claimsRouter = new PoolClaimsTest(manager);
@@ -190,22 +184,20 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         }
 
         return PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: fee,
-            tickSpacing: tickSpacing,
-            hooks: IHooks(address(hook))
+            currency0: currency0, currency1: currency1, fee: fee, tickSpacing: tickSpacing, hooks: IHooks(address(hook))
         });
     }
 
     function _mintAndApproveSupportedToken(address token, address deployer) private {
         MockERC20(token).mint(deployer, 2 ** 255);
 
-        address[9] memory toApprove = [
+        address[11] memory toApprove = [
             address(swapRouter),
             address(swapRouterNoChecks),
             address(modifyLiquidityRouter),
             address(modifyLiquidityNoChecks),
+            address(auxiliaryModifyLiquidityRouter),
+            address(auxiliaryModifyLiquidityNoChecks),
             address(donateRouter),
             address(takeRouter),
             address(claimsRouter),
@@ -218,6 +210,43 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         }
     }
 
+    function _baselinePosition(int24 tickLower, int24 tickUpper) private pure returns (ModifyLiquidityParams memory) {
+        return ModifyLiquidityParams({
+            tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: DEFAULT_LIQUIDITY_DELTA, salt: bytes32(0)
+        });
+    }
+
+    function _initializeAndSeedPools(Currency currency0, Currency currency1, Squid hook)
+        private
+        returns (SeededPoolState memory seededPools)
+    {
+        PoolKey memory firstPool = _poolKey(currency0, currency1, hook, 3000, 60);
+        PoolKey memory secondPool = _poolKey(currency0, currency1, hook, 500, 10);
+        PoolKey memory thirdPool = _poolKey(currency0, currency1, hook, 100, 1);
+        PoolKey memory fourthPool = _poolKey(currency0, currency1, hook, 10_000, 200);
+
+        manager.initialize(firstPool, SQRT_PRICE_1_1);
+        manager.initialize(secondPool, SQRT_PRICE_1_1);
+        manager.initialize(thirdPool, SQRT_PRICE_1_1);
+        manager.initialize(fourthPool, SQRT_PRICE_1_1);
+
+        modifyLiquidityRouter.modifyLiquidity(firstPool, _baselinePosition(-120, 120), Constants.ZERO_BYTES);
+        modifyLiquidityRouter.modifyLiquidity(secondPool, _baselinePosition(-200, 200), Constants.ZERO_BYTES);
+        modifyLiquidityRouter.modifyLiquidity(thirdPool, _baselinePosition(-60, 60), Constants.ZERO_BYTES);
+        modifyLiquidityRouter.modifyLiquidity(fourthPool, _baselinePosition(-400, 400), Constants.ZERO_BYTES);
+
+        swapRouter.swap(
+            firstPool,
+            SwapParams({zeroForOne: true, amountSpecified: -1e15, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            Constants.ZERO_BYTES
+        );
+
+        seededPools.poolIds = [firstPool.toId(), secondPool.toId(), thirdPool.toId(), fourthPool.toId()];
+        seededPools.fees = [uint24(3000), uint24(500), uint24(100), uint24(10_000)];
+        seededPools.tickSpacings = [int24(60), int24(10), int24(1), int24(200)];
+    }
+
     function _installSupportedTokenCode(string memory rpcUrl) private {
         MockERC20 mock = new MockERC20("Supported", "SPT", 18);
         bytes memory runtimeCode = address(mock).code;
@@ -225,13 +254,8 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
 
         for (uint256 i = 0; i < supportedTokens.length; i++) {
             console2.log("SeedLocalAnvil: setting token code", supportedTokens[i]);
-            string memory params = string.concat(
-                "[\"",
-                vm.toString(supportedTokens[i]),
-                "\",\"",
-                vm.toString(runtimeCode),
-                "\"]"
-            );
+            string memory params =
+                string.concat("[\"", vm.toString(supportedTokens[i]), "\",\"", vm.toString(runtimeCode), "\"]");
             vm.rpc(rpcUrl, "anvil_setCode", params);
         }
     }
@@ -251,24 +275,29 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         vm.serializeAddress(objectKey, "poolManagerAddress", deployment.poolManager);
         vm.serializeAddress(objectKey, "modifyLiquidityRouterAddress", deployment.modifyLiquidityRouter);
         vm.serializeAddress(objectKey, "modifyLiquidityNoChecksAddress", deployment.modifyLiquidityNoChecks);
+        vm.serializeAddress(
+            objectKey, "auxiliaryModifyLiquidityRouterAddress", deployment.auxiliaryModifyLiquidityRouter
+        );
+        vm.serializeAddress(
+            objectKey, "auxiliaryModifyLiquidityNoChecksAddress", deployment.auxiliaryModifyLiquidityNoChecks
+        );
         vm.serializeAddress(objectKey, "swapRouterAddress", deployment.swapRouter);
         vm.serializeAddress(objectKey, "donateRouterAddress", deployment.donateRouter);
         vm.serializeAddress(objectKey, "usdcAddress", deployment.usdc);
         vm.serializeAddress(objectKey, "wethAddress", deployment.weth);
 
-        bytes32[] memory poolIds = new bytes32[](2);
-        poolIds[0] = PoolId.unwrap(deployment.firstPoolId);
-        poolIds[1] = PoolId.unwrap(deployment.secondPoolId);
+        bytes32[] memory poolIds = new bytes32[](POOL_COUNT);
+        uint256[] memory fees = new uint256[](POOL_COUNT);
+        uint256[] memory tickSpacings = new uint256[](POOL_COUNT);
+
+        for (uint256 i = 0; i < POOL_COUNT; i++) {
+            poolIds[i] = PoolId.unwrap(deployment.poolIds[i]);
+            fees[i] = deployment.fees[i];
+            tickSpacings[i] = uint24(uint256(int256(deployment.tickSpacings[i])));
+        }
+
         vm.serializeBytes32(objectKey, "seededPoolIds", poolIds);
-
-        uint256[] memory fees = new uint256[](2);
-        fees[0] = 3000;
-        fees[1] = 500;
         vm.serializeUint(objectKey, "seededPoolFees", fees);
-
-        uint256[] memory tickSpacings = new uint256[](2);
-        tickSpacings[0] = 60;
-        tickSpacings[1] = 10;
         string memory json = vm.serializeUint(objectKey, "seededPoolTickSpacings", tickSpacings);
 
         vm.writeJson(json, artifactPath);
