@@ -46,6 +46,10 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         address deployer;
         address squid;
         address poolManager;
+        address modifyLiquidityRouter;
+        address modifyLiquidityNoChecks;
+        address swapRouter;
+        address donateRouter;
         address usdc;
         address weth;
         PoolId firstPoolId;
@@ -150,6 +154,10 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
             deployer: deployer,
             squid: address(hook),
             poolManager: address(manager),
+            modifyLiquidityRouter: address(modifyLiquidityRouter),
+            modifyLiquidityNoChecks: address(modifyLiquidityNoChecks),
+            swapRouter: address(swapRouter),
+            donateRouter: address(donateRouter),
             usdc: usdc,
             weth: weth,
             firstPoolId: firstPool.toId(),
@@ -241,6 +249,10 @@ contract SeedLocalAnvilScript is Script, UnichainSupportedTokens {
         vm.serializeAddress(objectKey, "deployer", deployment.deployer);
         vm.serializeAddress(objectKey, "squidAddress", deployment.squid);
         vm.serializeAddress(objectKey, "poolManagerAddress", deployment.poolManager);
+        vm.serializeAddress(objectKey, "modifyLiquidityRouterAddress", deployment.modifyLiquidityRouter);
+        vm.serializeAddress(objectKey, "modifyLiquidityNoChecksAddress", deployment.modifyLiquidityNoChecks);
+        vm.serializeAddress(objectKey, "swapRouterAddress", deployment.swapRouter);
+        vm.serializeAddress(objectKey, "donateRouterAddress", deployment.donateRouter);
         vm.serializeAddress(objectKey, "usdcAddress", deployment.usdc);
         vm.serializeAddress(objectKey, "wethAddress", deployment.weth);
 

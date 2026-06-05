@@ -1,6 +1,9 @@
 {
   "chainId": 31337,
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "donateRouterAddress": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+  "modifyLiquidityNoChecksAddress": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+  "modifyLiquidityRouterAddress": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
   "poolManagerAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "rpcUrl": "http://127.0.0.1:8545",
   "seededPoolFees": [
@@ -8,14 +11,15 @@
     500
   ],
   "seededPoolIds": [
-    "0x5957a179c070f459eab9c6abf761409d5dd727cef702d38af954a8fdbe653729",
-    "0x6b8eef9a349d3f3e1d1b7c0469edb03febaf9457e0d6fd611fc4e12b6e8e2eac"
+    "0xace7416f3b1cb727ca84d7c1ec79b19f2300ecaee68975ab298979c39125d4e9",
+    "0x76605332ead9be2d9d26ebf389da28ae0d6a058a919b722ca7e7ecc5b5b9fb65"
   ],
   "seededPoolTickSpacings": [
     60,
     10
   ],
-  "squidAddress": "0x30F31795292854C8cce1297C778020Be4965bfF0",
+  "squidAddress": "0xe9f68Cc7ce35fD4B3347Ea507680E4bf29633ff0",
+  "swapRouterAddress": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
   "usdcAddress": "0x078D782b760474a361dDA0AF3839290b0EF57AD6",
   "wethAddress": "0x4200000000000000000000000000000000000006"
 }
