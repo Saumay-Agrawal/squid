@@ -91,11 +91,11 @@ contract Squid is
 
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         internal
-        view
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         _checkPoolCurrenciesAllowed(key);
+        _snapshotPoolTickBeforeSwap(key);
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -143,6 +143,7 @@ contract Squid is
         returns (bytes4, int128)
     {
         _trackPoolSwap(key, params, delta);
+        _trackLpPositionSwapVolume(key, params, delta);
         return (this.afterSwap.selector, 0);
     }
 

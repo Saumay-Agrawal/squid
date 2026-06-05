@@ -56,6 +56,12 @@ struct LpPositionProfile {
     uint256 totalAmount1Deposited;
     uint256 addLiquidityCount;
     uint256 removeLiquidityCount;
+    uint256 activePositionVolume0;
+    uint256 activePositionVolume1;
+    uint256 totalPoolVolume0;
+    uint256 totalPoolVolume1;
+    uint256 activeVolumePercentage0Bps;
+    uint256 activeVolumePercentage1Bps;
     uint256 openedAtBlock;
     uint256 lastActionBlock;
     uint256 closedAtBlock;

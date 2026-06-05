@@ -5,7 +5,8 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 
 import {LpProfile, LpPoolProfile, LpPositionProfile} from "../src/types/LpProfile.sol";
 import {SquidTestBase} from "./base/SquidTestBase.sol";
@@ -209,5 +210,71 @@ contract SquidLpProfilesTest is SquidTestBase {
         assertEq(profile.lifetimePositionCount, 2);
         assertEq(PoolId.unwrap(hook.getLpPoolAt(lp, 0)), PoolId.unwrap(firstPool.toId()));
         assertEq(PoolId.unwrap(hook.getLpPoolAt(lp, 1)), PoolId.unwrap(secondPool.toId()));
+    }
+
+    function test_TracksActiveAndTotalSwapVolumeForInRangePosition() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+        address lp = address(modifyLiquidityRouter);
+
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -10 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        bytes32 positionId =
+            hook.getPositionId(lp, key, LIQUIDITY_PARAMS.tickLower, LIQUIDITY_PARAMS.tickUpper, LIQUIDITY_PARAMS.salt);
+        LpPositionProfile memory positionProfile = hook.getLpPositionProfile(positionId);
+
+        assertGt(positionProfile.totalPoolVolume0, 0);
+        assertGt(positionProfile.totalPoolVolume1, 0);
+        assertEq(positionProfile.activePositionVolume0, positionProfile.totalPoolVolume0);
+        assertEq(positionProfile.activePositionVolume1, positionProfile.totalPoolVolume1);
+        assertEq(positionProfile.activeVolumePercentage0Bps, 10_000);
+        assertEq(positionProfile.activeVolumePercentage1Bps, 10_000);
+    }
+
+    function test_DoesNotCountOutOfRangePositionAsActiveSwapVolume() public {
+        PoolKey memory key = _initializeWhitelistedPool();
+        address lp = address(modifyLiquidityRouter);
+        ModifyLiquidityParams memory outOfRangePosition = ModifyLiquidityParams({
+            tickLower: 600,
+            tickUpper: 660,
+            liquidityDelta: LIQUIDITY_PARAMS.liquidityDelta,
+            salt: bytes32(uint256(1))
+        });
+
+        modifyLiquidityRouter.modifyLiquidity(key, LIQUIDITY_PARAMS, ZERO_BYTES);
+        modifyLiquidityRouter.modifyLiquidity(key, outOfRangePosition, ZERO_BYTES);
+
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -10 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        bytes32 inRangePositionId =
+            hook.getPositionId(lp, key, LIQUIDITY_PARAMS.tickLower, LIQUIDITY_PARAMS.tickUpper, LIQUIDITY_PARAMS.salt);
+        bytes32 outOfRangePositionId = hook.getPositionId(
+            lp, key, outOfRangePosition.tickLower, outOfRangePosition.tickUpper, outOfRangePosition.salt
+        );
+        LpPositionProfile memory inRangePosition = hook.getLpPositionProfile(inRangePositionId);
+        LpPositionProfile memory outOfRangeProfile = hook.getLpPositionProfile(outOfRangePositionId);
+
+        assertGt(inRangePosition.activePositionVolume0, 0);
+        assertGt(inRangePosition.activePositionVolume1, 0);
+        assertEq(inRangePosition.activeVolumePercentage0Bps, 10_000);
+        assertEq(inRangePosition.activeVolumePercentage1Bps, 10_000);
+
+        assertGt(outOfRangeProfile.totalPoolVolume0, 0);
+        assertGt(outOfRangeProfile.totalPoolVolume1, 0);
+        assertEq(outOfRangeProfile.activePositionVolume0, 0);
+        assertEq(outOfRangeProfile.activePositionVolume1, 0);
+        assertEq(outOfRangeProfile.activeVolumePercentage0Bps, 0);
+        assertEq(outOfRangeProfile.activeVolumePercentage1Bps, 0);
     }
 }

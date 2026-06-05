@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
-import {ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
@@ -23,6 +23,9 @@ abstract contract SquidLpProfiles {
     mapping(address lp => mapping(PoolId poolId => bytes32[] positionIds)) internal lpPoolPositions;
     mapping(address lp => mapping(PoolId poolId => LpPoolProfile)) internal lpPoolProfiles;
     mapping(bytes32 positionId => LpPositionProfile) internal lpPositionProfiles;
+    mapping(PoolId poolId => bytes32[] positionIds) internal poolPositionIds;
+    mapping(PoolId poolId => int24 tick) internal poolPreSwapTicks;
+    mapping(PoolId poolId => bool set) internal poolPreSwapTickSet;
 
     function getLpProfile(address lp) external view returns (LpProfile memory) {
         return lpProfiles[lp];
@@ -152,8 +155,51 @@ abstract contract SquidLpProfiles {
         positionProfile.openedAtBlock = block.number;
         lpPositions[owner].push(positionId);
         lpPoolPositions[owner][poolId].push(positionId);
+        poolPositionIds[poolId].push(positionId);
         profile.lifetimePositionCount++;
         poolProfile.lifetimePositionCount++;
+    }
+
+    function _trackLpPositionSwapVolume(PoolKey calldata key, SwapParams calldata, BalanceDelta delta) internal {
+        PoolKey memory keyMemory = key;
+        PoolId poolId = keyMemory.toId();
+        bytes32[] storage positionIdsForPool = poolPositionIds[poolId];
+        if (positionIdsForPool.length == 0) return;
+
+        (, int24 currentTick,,) = StateLibrary.getSlot0(_poolManager(), poolId);
+        int24 referenceTick = poolPreSwapTickSet[poolId] ? poolPreSwapTicks[poolId] : currentTick;
+        uint256 volume0 = _absLpProfileInt128(delta.amount0());
+        uint256 volume1 = _absLpProfileInt128(delta.amount1());
+
+        for (uint256 i = 0; i < positionIdsForPool.length; i++) {
+            LpPositionProfile storage positionProfile = lpPositionProfiles[positionIdsForPool[i]];
+            if (!positionProfile.active) continue;
+
+            positionProfile.totalPoolVolume0 += volume0;
+            positionProfile.totalPoolVolume1 += volume1;
+
+            if (_isPositionInRange(positionProfile, referenceTick)) {
+                positionProfile.activePositionVolume0 += volume0;
+                positionProfile.activePositionVolume1 += volume1;
+            }
+
+            positionProfile.activeVolumePercentage0Bps = positionProfile.totalPoolVolume0 == 0
+                ? 0
+                : (positionProfile.activePositionVolume0 * 10_000) / positionProfile.totalPoolVolume0;
+            positionProfile.activeVolumePercentage1Bps = positionProfile.totalPoolVolume1 == 0
+                ? 0
+                : (positionProfile.activePositionVolume1 * 10_000) / positionProfile.totalPoolVolume1;
+        }
+
+        poolPreSwapTickSet[poolId] = false;
+    }
+
+    function _snapshotPoolTickBeforeSwap(PoolKey calldata key) internal {
+        PoolKey memory keyMemory = key;
+        PoolId poolId = keyMemory.toId();
+        (, int24 tick,,) = StateLibrary.getSlot0(_poolManager(), poolId);
+        poolPreSwapTicks[poolId] = tick;
+        poolPreSwapTickSet[poolId] = true;
     }
 
     function _trackLpProfileLiquidityIncrease(
@@ -268,6 +314,10 @@ abstract contract SquidLpProfiles {
 
     function _absLpProfileInt128(int128 x) private pure returns (uint256) {
         return x < 0 ? uint256(uint128(-x)) : uint256(uint128(x));
+    }
+
+    function _isPositionInRange(LpPositionProfile storage positionProfile, int24 tick) private view returns (bool) {
+        return positionProfile.tickLower <= tick && tick < positionProfile.tickUpper;
     }
 
     function _absLpProfileInt256ToUint128(int256 x) private pure returns (uint128) {
