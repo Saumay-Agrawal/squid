@@ -9,5 +9,8 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "solmate/=lib/v4-hooks-public/lib/v4-core/lib/solmate/"
 ]
+fs_permissions = [
+    { access = "read-write", path = "./script/output" }
+]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

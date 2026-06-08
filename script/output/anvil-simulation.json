@@ -1,0 +1,571 @@
+{
+  "runTimestamp": 1,
+  "chainId": 31337,
+  "contracts": {
+    "poolManager": "0x5aAdFB43eF8dAF45DD80F4676345b7676f1D70e3",
+    "squid": "0xFFfFfFfFfFfFFfFFFFFFFFFFfFffFFFffFFfD540",
+    "modifyLiquidityRouter": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+    "swapRouter": "0xf13D09eD3cbdD1C930d4de74808de1f33B6b3D4f",
+    "swapRouterNoChecks": "0x5c4a3C2CD1ffE6aAfDF62b64bb3E620C696c832E",
+    "actionsRouter": "0xD6D13a66c35d1a60556d955b0EBf5E2B32be4323"
+  },
+  "scenarios": [
+    {
+      "name": "balanced-active-pool",
+      "description": "Wide and narrow positions start in range, then a swap and partial removal update active liquidity.",
+      "pool": {
+        "poolId": "0x3299ca9fcba6346ebfc75fa08094da302f8a33a099a7912ebbcc5a85e8e5a410",
+        "token0": "0x3368CC5DE817eF5b492792eF42c29a6b2746D036",
+        "token1": "0xd9cb6B79f518cBD42AAcd7d5Cb1FD355B5dF2953",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hook": "0xFFfFfFfFfFfFFfFFFFFFFFFFfFffFFFffFFfD540"
+      },
+      "lpAddresses": [
+        "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+        "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3"
+      ],
+      "actions": [
+        {
+          "type": "initialize",
+          "actor": "0x0000000000000000000000000000000000000000",
+          "details": "tick=0"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+          "details": "alice wide add positionId=0xfb23c8e4e790d1fa1b9fe72672a19dd750785b5576658b6e76def76c23f1eeb1 range=[-240,240] liquidityDelta=5000000000000000000"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+          "details": "bob narrow add positionId=0x1d398c0821b45451463574719d3d8d4db3d02b8e2eecfa06aed6dbe6db4df364 range=[-120,120] liquidityDelta=2000000000000000000"
+        },
+        {
+          "type": "swap",
+          "actor": "0x4eb2fE9A781CcCF19AE044b052d0827f5c4f4885",
+          "details": "small price move zeroForOne=true amountSpecified=-10000000000000000"
+        },
+        {
+          "type": "removeLiquidity",
+          "actor": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+          "details": "alice partial remove positionId=0xfb23c8e4e790d1fa1b9fe72672a19dd750785b5576658b6e76def76c23f1eeb1 liquidityDelta=-1000000000000000000"
+        }
+      ],
+      "finalState": {
+        "poolSummary": {
+          "poolId": "0x3299ca9fcba6346ebfc75fa08094da302f8a33a099a7912ebbcc5a85e8e5a410",
+          "initialized": true,
+          "initializedBlock": 1,
+          "initializedTimestamp": 1,
+          "token0": "0x3368CC5DE817eF5b492792eF42c29a6b2746D036",
+          "token1": "0xd9cb6B79f518cBD42AAcd7d5Cb1FD355B5dF2953",
+          "token0Symbol": "bUSD",
+          "token1Symbol": "bETH",
+          "fee": 3000,
+          "tickSpacing": 60,
+          "initialSqrtPriceX96": 79228162514264337593543950336,
+          "liquidity": {
+            "totalLiquidity": 6000000000000000000,
+            "activeLiquidity": 6000000000000000000,
+            "peakActiveLiquidity": 7000000000000000000
+          }
+        },
+        "currentPoolState": {
+          "sqrtPriceX96": 79115479467080510067062719577,
+          "tick": -29,
+          "protocolFee": 0,
+          "lpFee": 3000
+        },
+        "positions": [
+          {
+            "lp": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+            "positionId": "0xfb23c8e4e790d1fa1b9fe72672a19dd750785b5576658b6e76def76c23f1eeb1",
+            "tickLower": -240,
+            "tickUpper": 240,
+            "salt": "0x616c6963652d7769646500000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0xfb23c8e4e790d1fa1b9fe72672a19dd750785b5576658b6e76def76c23f1eeb1",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0x3299ca9fcba6346ebfc75fa08094da302f8a33a099a7912ebbcc5a85e8e5a410",
+              "tickLower": -240,
+              "tickUpper": 240,
+              "salt": "0x616c6963652d7769646500000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 4000000000000000000,
+              "activeLiquidity": 4000000000000000000,
+              "activeSwapVolume0": 10000000000000000,
+              "activeSwapVolume1": 9955820067703570,
+              "lifetimeSwapVolume0": 10000000000000000,
+              "lifetimeSwapVolume1": 9955820067703570
+            },
+            "pnl": {
+              "principalAmount0": 47710777337535273,
+              "principalAmount1": 47710777337535273,
+              "currentAmount0": 53407920194678129,
+              "currentAmount1": 42021737298847517,
+              "feeAccumulated0": 21428571428571,
+              "feeAccumulated1": 0,
+              "netPnl0": 5697142857142856,
+              "netPnl1": -5689040038687756
+            }
+          },
+          {
+            "lp": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+            "positionId": "0x1d398c0821b45451463574719d3d8d4db3d02b8e2eecfa06aed6dbe6db4df364",
+            "tickLower": -120,
+            "tickUpper": 120,
+            "salt": "0x626f622d6e6172726f7700000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0x1d398c0821b45451463574719d3d8d4db3d02b8e2eecfa06aed6dbe6db4df364",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0x3299ca9fcba6346ebfc75fa08094da302f8a33a099a7912ebbcc5a85e8e5a410",
+              "tickLower": -120,
+              "tickUpper": 120,
+              "salt": "0x626f622d6e6172726f7700000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 2000000000000000000,
+              "activeLiquidity": 2000000000000000000,
+              "activeSwapVolume0": 10000000000000000,
+              "activeSwapVolume1": 9955820067703570,
+              "lifetimeSwapVolume0": 10000000000000000,
+              "lifetimeSwapVolume1": 9955820067703570
+            },
+            "pnl": {
+              "principalAmount0": 11963475521019326,
+              "principalAmount1": 11963475521019326,
+              "currentAmount0": 14820618378162181,
+              "currentAmount1": 9118955501675447,
+              "feeAccumulated0": 8571428571428,
+              "feeAccumulated1": 0,
+              "netPnl0": 2857142857142855,
+              "netPnl1": -2844520019343879
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "upper-range-liquidity",
+      "description": "Mixes in-range base liquidity with an upper-range LP, then swaps into that region and closes one position.",
+      "pool": {
+        "poolId": "0x4990850691c6fe3d8ddcb34c0112a144f224bad2cbf07c8c6507e796da8bd1e4",
+        "token0": "0x8Be46BE34e3CCd3BCdDabCe1E7Ed397CB8Cf8731",
+        "token1": "0xe64497116bE9e8d7e6E7118aAac201124078A416",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hook": "0xFFfFfFfFfFfFFfFFFFFFFFFFfFffFFFffFFfD540"
+      },
+      "lpAddresses": [
+        "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+        "0x68E266Be881BD7757C6d6181b3891b373A9A2E46"
+      ],
+      "actions": [
+        {
+          "type": "initialize",
+          "actor": "0x0000000000000000000000000000000000000000",
+          "details": "tick=0"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+          "details": "alice base add positionId=0x7616aec2b80a72cbd42a7d561456c15d9ca9a4912938b14eba9d08e6d8d98fe6 range=[-120,120] liquidityDelta=1000000000000000000000000"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0x68E266Be881BD7757C6d6181b3891b373A9A2E46",
+          "details": "carol upper add positionId=0x59c310ddeb4dbc50bad37cbb156b0d8ea512565e4f221841185bf314d8528aa0 range=[120,240] liquidityDelta=1000000000000000000000000"
+        },
+        {
+          "type": "swap",
+          "actor": "0x4eb2fE9A781CcCF19AE044b052d0827f5c4f4885",
+          "details": "cross current range zeroForOne=true amountSpecified=-1000000000000000000"
+        },
+        {
+          "type": "removeLiquidity",
+          "actor": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+          "details": "alice full remove positionId=0x7616aec2b80a72cbd42a7d561456c15d9ca9a4912938b14eba9d08e6d8d98fe6 liquidityDelta=-1000000000000000000000000"
+        }
+      ],
+      "finalState": {
+        "poolSummary": {
+          "poolId": "0x4990850691c6fe3d8ddcb34c0112a144f224bad2cbf07c8c6507e796da8bd1e4",
+          "initialized": true,
+          "initializedBlock": 1,
+          "initializedTimestamp": 1,
+          "token0": "0x8Be46BE34e3CCd3BCdDabCe1E7Ed397CB8Cf8731",
+          "token1": "0xe64497116bE9e8d7e6E7118aAac201124078A416",
+          "token0Symbol": "uETH",
+          "token1Symbol": "uUSD",
+          "fee": 3000,
+          "tickSpacing": 60,
+          "initialSqrtPriceX96": 79228162514264337593543950336,
+          "liquidity": {
+            "totalLiquidity": 1000000000000000000000000,
+            "activeLiquidity": 0,
+            "peakActiveLiquidity": 1000000000000000000000000
+          }
+        },
+        "currentPoolState": {
+          "sqrtPriceX96": 79228083523865064300074843162,
+          "tick": -1,
+          "protocolFee": 0,
+          "lpFee": 3000
+        },
+        "positions": [
+          {
+            "lp": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+            "positionId": "0x7616aec2b80a72cbd42a7d561456c15d9ca9a4912938b14eba9d08e6d8d98fe6",
+            "tickLower": -120,
+            "tickUpper": 120,
+            "salt": "0x616c6963652d6261736500000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0x7616aec2b80a72cbd42a7d561456c15d9ca9a4912938b14eba9d08e6d8d98fe6",
+              "initialized": true,
+              "active": false,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0x4990850691c6fe3d8ddcb34c0112a144f224bad2cbf07c8c6507e796da8bd1e4",
+              "tickLower": -120,
+              "tickUpper": 120,
+              "salt": "0x616c6963652d6261736500000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 0,
+              "activeLiquidity": 0,
+              "activeSwapVolume0": 1000000000000000000,
+              "activeSwapVolume1": 996999005991991025,
+              "lifetimeSwapVolume0": 1000000000000000000,
+              "lifetimeSwapVolume1": 996999005991991025
+            },
+            "pnl": {
+              "principalAmount0": 0,
+              "principalAmount1": 0,
+              "currentAmount0": 0,
+              "currentAmount1": 0,
+              "feeAccumulated0": 2999999999999999,
+              "feeAccumulated1": 0,
+              "netPnl0": 0,
+              "netPnl1": 0
+            }
+          },
+          {
+            "lp": "0x68E266Be881BD7757C6d6181b3891b373A9A2E46",
+            "positionId": "0x59c310ddeb4dbc50bad37cbb156b0d8ea512565e4f221841185bf314d8528aa0",
+            "tickLower": 120,
+            "tickUpper": 240,
+            "salt": "0x6361726f6c2d7570706572000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0x59c310ddeb4dbc50bad37cbb156b0d8ea512565e4f221841185bf314d8528aa0",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0x68E266Be881BD7757C6d6181b3891b373A9A2E46",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0x4990850691c6fe3d8ddcb34c0112a144f224bad2cbf07c8c6507e796da8bd1e4",
+              "tickLower": 120,
+              "tickUpper": 240,
+              "salt": "0x6361726f6c2d7570706572000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 1000000000000000000000000,
+              "activeLiquidity": 0,
+              "activeSwapVolume0": 0,
+              "activeSwapVolume1": 0,
+              "lifetimeSwapVolume0": 1000000000000000000,
+              "lifetimeSwapVolume1": 996999005991991025
+            },
+            "pnl": {
+              "principalAmount0": 5945956573874155445308,
+              "principalAmount1": 0,
+              "currentAmount0": 5945956573874155445307,
+              "currentAmount1": 0,
+              "feeAccumulated0": 0,
+              "feeAccumulated1": 0,
+              "netPnl0": -1,
+              "netPnl1": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "mixed-range-rotation",
+      "description": "Creates multiple LPs with overlapping and disjoint ranges, then rotates price and partially removes liquidity.",
+      "pool": {
+        "poolId": "0xb5f85cc6ae28fe3db39a258645b00e6559d443855609bbbb1c208d1421906bbd",
+        "token0": "0xEf1BE4630e01a7096e7A7823048a9873ccEF116c",
+        "token1": "0xf11b2046D0661652a93FCc05d530254240571f8d",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hook": "0xFFfFfFfFfFfFFfFFFFFFFFFFfFffFFFffFFfD540"
+      },
+      "lpAddresses": [
+        "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+        "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+        "0x68E266Be881BD7757C6d6181b3891b373A9A2E46"
+      ],
+      "actions": [
+        {
+          "type": "initialize",
+          "actor": "0x0000000000000000000000000000000000000000",
+          "details": "tick=0"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+          "details": "alice wide add positionId=0x3fffb78fafbc5908f0bf7d32350dca2ffc537030aeae80b76edbe11b9e5b1e5a range=[-300,300] liquidityDelta=4000000000000000000"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+          "details": "bob tight add positionId=0xfa89abd2f10471402dfe054ebcde35dede20fe610070794714e3cd56f3205e40 range=[-120,120] liquidityDelta=3000000000000000000"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0x68E266Be881BD7757C6d6181b3891b373A9A2E46",
+          "details": "carol upper add positionId=0x41a70450e86736c491c7d7cfd1924291b4de4d49f4aea39c3293997f193e8ce1 range=[120,360] liquidityDelta=2000000000000000000"
+        },
+        {
+          "type": "addLiquidity",
+          "actor": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+          "details": "bob second position add positionId=0xa9cc7fbeb08374e7d6901d48009840fa56c1d4d3c1c5dfc6cd6748bc8c9d4c77 range=[-60,60] liquidityDelta=1000000000000000000"
+        },
+        {
+          "type": "swap",
+          "actor": "0x4eb2fE9A781CcCF19AE044b052d0827f5c4f4885",
+          "details": "first rotation swap zeroForOne=true amountSpecified=-500000000000000000"
+        },
+        {
+          "type": "swap",
+          "actor": "0x4eb2fE9A781CcCF19AE044b052d0827f5c4f4885",
+          "details": "second rotation swap zeroForOne=false amountSpecified=-400000000000000000"
+        },
+        {
+          "type": "removeLiquidity",
+          "actor": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+          "details": "bob partial remove positionId=0xfa89abd2f10471402dfe054ebcde35dede20fe610070794714e3cd56f3205e40 liquidityDelta=-1000000000000000000"
+        }
+      ],
+      "finalState": {
+        "poolSummary": {
+          "poolId": "0xb5f85cc6ae28fe3db39a258645b00e6559d443855609bbbb1c208d1421906bbd",
+          "initialized": true,
+          "initializedBlock": 1,
+          "initializedTimestamp": 1,
+          "token0": "0xEf1BE4630e01a7096e7A7823048a9873ccEF116c",
+          "token1": "0xf11b2046D0661652a93FCc05d530254240571f8d",
+          "token0Symbol": "rUSD",
+          "token1Symbol": "rETH",
+          "fee": 3000,
+          "tickSpacing": 60,
+          "initialSqrtPriceX96": 79228162514264337593543950336,
+          "liquidity": {
+            "totalLiquidity": 9000000000000000000,
+            "activeLiquidity": 0,
+            "peakActiveLiquidity": 8000000000000000000
+          }
+        },
+        "currentPoolState": {
+          "sqrtPriceX96": 1461446703485210103287273052203988822378723970341,
+          "tick": 887271,
+          "protocolFee": 0,
+          "lpFee": 3000
+        },
+        "positions": [
+          {
+            "lp": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+            "positionId": "0x3fffb78fafbc5908f0bf7d32350dca2ffc537030aeae80b76edbe11b9e5b1e5a",
+            "tickLower": -300,
+            "tickUpper": 300,
+            "salt": "0x616c6963652d7769646500000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0x3fffb78fafbc5908f0bf7d32350dca2ffc537030aeae80b76edbe11b9e5b1e5a",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0x8C6e8d54A2168e1eB0Cd00b28C2991117B925E22",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0xb5f85cc6ae28fe3db39a258645b00e6559d443855609bbbb1c208d1421906bbd",
+              "tickLower": -300,
+              "tickUpper": 300,
+              "salt": "0x616c6963652d7769646500000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 4000000000000000000,
+              "activeLiquidity": 0,
+              "activeSwapVolume0": 0,
+              "activeSwapVolume1": 0,
+              "lifetimeSwapVolume0": 267461343147728879,
+              "lifetimeSwapVolume1": 267335668681143684
+            },
+            "pnl": {
+              "principalAmount0": 59549286447830054,
+              "principalAmount1": 59549286447830054,
+              "currentAmount0": 181893319943324,
+              "currentAmount1": 120359578511194946,
+              "feeAccumulated0": 181893319943324,
+              "feeAccumulated1": 361078735533586,
+              "netPnl0": -59367393127886730,
+              "netPnl1": 60810292063364892
+            }
+          },
+          {
+            "lp": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+            "positionId": "0xfa89abd2f10471402dfe054ebcde35dede20fe610070794714e3cd56f3205e40",
+            "tickLower": -120,
+            "tickUpper": 120,
+            "salt": "0x626f622d74696768740000000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0xfa89abd2f10471402dfe054ebcde35dede20fe610070794714e3cd56f3205e40",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0xb5f85cc6ae28fe3db39a258645b00e6559d443855609bbbb1c208d1421906bbd",
+              "tickLower": -120,
+              "tickUpper": 120,
+              "salt": "0x626f622d74696768740000000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 2000000000000000000,
+              "activeLiquidity": 0,
+              "activeSwapVolume0": 0,
+              "activeSwapVolume1": 0,
+              "lifetimeSwapVolume0": 267461343147728879,
+              "lifetimeSwapVolume1": 267335668681143684
+            },
+            "pnl": {
+              "principalAmount0": 11963475521019326,
+              "principalAmount1": 11963475521019326,
+              "currentAmount0": 0,
+              "currentAmount1": 23998944058655655,
+              "feeAccumulated0": 54322576147807,
+              "feeAccumulated1": 108320208890622,
+              "netPnl0": -11963475521019326,
+              "netPnl1": 12035468537636329
+            }
+          },
+          {
+            "lp": "0x68E266Be881BD7757C6d6181b3891b373A9A2E46",
+            "positionId": "0x41a70450e86736c491c7d7cfd1924291b4de4d49f4aea39c3293997f193e8ce1",
+            "tickLower": 120,
+            "tickUpper": 360,
+            "salt": "0x6361726f6c2d7570706572000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0x41a70450e86736c491c7d7cfd1924291b4de4d49f4aea39c3293997f193e8ce1",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0x68E266Be881BD7757C6d6181b3891b373A9A2E46",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0xb5f85cc6ae28fe3db39a258645b00e6559d443855609bbbb1c208d1421906bbd",
+              "tickLower": 120,
+              "tickUpper": 360,
+              "salt": "0x6361726f6c2d7570706572000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 2000000000000000000,
+              "activeLiquidity": 0,
+              "activeSwapVolume0": 0,
+              "activeSwapVolume1": 0,
+              "lifetimeSwapVolume0": 267461343147728879,
+              "lifetimeSwapVolume1": 267335668681143684
+            },
+            "pnl": {
+              "principalAmount0": 23712691989576035,
+              "principalAmount1": 0,
+              "currentAmount0": 0,
+              "currentAmount1": 24361736882235392,
+              "feeAccumulated0": 0,
+              "feeAccumulated1": 73085210646706,
+              "netPnl0": -23712691989576035,
+              "netPnl1": 24361736882235392
+            }
+          },
+          {
+            "lp": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+            "positionId": "0xa9cc7fbeb08374e7d6901d48009840fa56c1d4d3c1c5dfc6cd6748bc8c9d4c77",
+            "tickLower": -60,
+            "tickUpper": 60,
+            "salt": "0x626f622d7365636f6e6400000000000000000000000000000000000000000000",
+            "summary": {
+              "positionId": "0xa9cc7fbeb08374e7d6901d48009840fa56c1d4d3c1c5dfc6cd6748bc8c9d4c77",
+              "initialized": true,
+              "active": true,
+              "age": 0,
+              "createdBlock": 1,
+              "createdTimestamp": 1,
+              "updatedBlock": 1,
+              "updatedTimestamp": 1,
+              "owner": "0xedE9F51efd2EC6494f8B9B1222f86b9Cb9D2EdB3",
+              "coreOwner": "0x6966CB5815014204E5bF64A851ef03cF93eA2D35",
+              "poolId": "0xb5f85cc6ae28fe3db39a258645b00e6559d443855609bbbb1c208d1421906bbd",
+              "tickLower": -60,
+              "tickUpper": 60,
+              "salt": "0x626f622d7365636f6e6400000000000000000000000000000000000000000000"
+            },
+            "liquidity": {
+              "totalLiquidity": 1000000000000000000,
+              "activeLiquidity": 0,
+              "activeSwapVolume0": 0,
+              "activeSwapVolume1": 0,
+              "lifetimeSwapVolume0": 267461343147728879,
+              "lifetimeSwapVolume1": 267335668681143684
+            },
+            "pnl": {
+              "principalAmount0": 2995354955910781,
+              "principalAmount1": 2995354955910781,
+              "currentAmount0": 9040182736435,
+              "currentAmount1": 6017762305569414,
+              "feeAccumulated0": 9040182736435,
+              "feeAccumulated1": 18053286916708,
+              "netPnl0": -2986314773174346,
+              "netPnl1": 3022407349658633
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

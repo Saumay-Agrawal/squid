@@ -10,6 +10,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {IMsgSender} from "@uniswap/v4-periphery/src/interfaces/IMsgSender.sol";
 
 import {PositionLiquidityAmounts} from "../libraries/PositionLiquidityAmounts.sol";
 import {PositionSummary, PositionLiquidity, PositionPnL, PositionPnLState} from "../types/PositionMetrics.sol";
@@ -53,7 +54,7 @@ abstract contract SquidPositionMetrics {
     }
 
     function _recordPositionOpenOrIncrease(
-        address owner,
+        address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         BalanceDelta delta,
@@ -61,7 +62,7 @@ abstract contract SquidPositionMetrics {
     )
         internal
     {
-        bytes32 positionId = _syncPositionSummary(owner, key, params);
+        bytes32 positionId = _syncPositionSummary(sender, key, params);
         _syncPositionLiquidity(positionSummariesById[positionId]);
         PositionPnLState storage pnlState = positionPnLStatesById[positionId];
 
@@ -70,7 +71,7 @@ abstract contract SquidPositionMetrics {
     }
 
     function _recordPositionDecreaseOrClose(
-        address owner,
+        address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         BalanceDelta,
@@ -79,17 +80,18 @@ abstract contract SquidPositionMetrics {
         internal
     {
         PoolId poolId = key.toId();
+        address owner = _resolvePositionOwner(sender);
         bytes32 positionId = getPositionId(owner, poolId, params.tickLower, params.tickUpper, params.salt);
         PositionPnLState storage pnlState = positionPnLStatesById[positionId];
 
-        uint128 liquidityAfter = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(owner, params));
+        uint128 liquidityAfter = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(sender, params));
         uint128 liquidityRemoved = _absoluteLiquidityDelta(params.liquidityDelta);
         uint128 liquidityBefore = liquidityAfter + liquidityRemoved;
 
         _recordPrincipalDecrease(pnlState, liquidityBefore, liquidityRemoved);
         _recordRealizedFees(pnlState, feesAccrued);
         _syncPositionLiquidity(positionSummariesById[positionId]);
-        _syncPositionSummary(owner, key, params);
+        _syncPositionSummary(sender, key, params);
     }
 
     function _recordPositionSwap(PoolKey calldata key, SwapParams calldata, BalanceDelta delta) internal {
@@ -117,11 +119,12 @@ abstract contract SquidPositionMetrics {
         }
     }
 
-    function _syncPositionSummary(address owner, PoolKey calldata key, ModifyLiquidityParams calldata params)
+    function _syncPositionSummary(address sender, PoolKey calldata key, ModifyLiquidityParams calldata params)
         private
         returns (bytes32 positionId)
     {
         PoolId poolId = key.toId();
+        address owner = _resolvePositionOwner(sender);
         positionId = getPositionId(owner, poolId, params.tickLower, params.tickUpper, params.salt);
         PositionSummary storage summary = positionSummariesById[positionId];
 
@@ -131,6 +134,7 @@ abstract contract SquidPositionMetrics {
             summary.createdBlock = uint64(block.number);
             summary.createdTimestamp = uint64(block.timestamp);
             summary.owner = owner;
+            summary.coreOwner = sender;
             summary.poolId = PoolId.unwrap(poolId);
             summary.tickLower = params.tickLower;
             summary.tickUpper = params.tickUpper;
@@ -140,6 +144,7 @@ abstract contract SquidPositionMetrics {
 
         summary.updatedBlock = uint64(block.number);
         summary.updatedTimestamp = uint64(block.timestamp);
+        summary.coreOwner = sender;
         summary.active = _getPositionLiquidity(poolId, summary) > 0;
     }
 
@@ -251,7 +256,17 @@ abstract contract SquidPositionMetrics {
     }
 
     function _corePositionId(PositionSummary storage summary) internal view returns (bytes32) {
-        return Position.calculatePositionKey(summary.owner, summary.tickLower, summary.tickUpper, summary.salt);
+        return Position.calculatePositionKey(summary.coreOwner, summary.tickLower, summary.tickUpper, summary.salt);
+    }
+
+    function _resolvePositionOwner(address sender) internal view returns (address owner) {
+        owner = sender;
+
+        try IMsgSender(sender).msgSender() returns (address originalSender) {
+            if (originalSender != address(0)) {
+                owner = originalSender;
+            }
+        } catch {}
     }
 
     function _absoluteLiquidityDelta(int256 liquidityDelta) internal pure returns (uint128 liquidity) {

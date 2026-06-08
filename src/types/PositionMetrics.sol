@@ -11,6 +11,7 @@ struct PositionSummary {
     uint64 updatedBlock;
     uint64 updatedTimestamp;
     address owner;
+    address coreOwner;
     bytes32 poolId;
     int24 tickLower;
     int24 tickUpper;

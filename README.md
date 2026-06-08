@@ -45,6 +45,30 @@ $ forge snapshot
 $ anvil
 ```
 
+### Local Squid Simulation
+
+Run the local Squid simulation harness and persist the result artifact:
+
+```shell
+$ anvil
+$ forge script script/SimulateSquid.s.sol:SimulateSquid --rpc-url http://127.0.0.1:8545 --sig "simulate()"
+```
+
+For a Foundry-local dry run without an RPC node:
+
+```shell
+$ forge script --offline script/SimulateSquid.s.sol:SimulateSquid --sig "simulate()"
+```
+
+This writes a machine-readable artifact to `script/output/anvil-simulation.json`.
+
+The simulation currently includes:
+
+- multiple locally deployed token pairs and pools
+- liquidity positions opened from distinct LP addresses
+- swaps and liquidity removals to exercise Squid pool and position metrics
+- persisted deployed contract addresses, chronological scenario actions, and final pool/position snapshots
+
 ### Deploy
 
 ```shell
