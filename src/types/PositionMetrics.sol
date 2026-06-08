@@ -5,6 +5,7 @@ struct PositionSummary {
     bytes32 positionId;
     bool initialized;
     bool active;
+    uint64 age;
     uint64 createdBlock;
     uint64 createdTimestamp;
     uint64 updatedBlock;
@@ -14,6 +15,15 @@ struct PositionSummary {
     int24 tickLower;
     int24 tickUpper;
     bytes32 salt;
+}
+
+struct PositionLiquidity {
+    uint128 totalLiquidity;
+    uint128 activeLiquidity;
+    uint256 activeSwapVolume0;
+    uint256 activeSwapVolume1;
+    uint256 lifetimeSwapVolume0;
+    uint256 lifetimeSwapVolume1;
 }
 
 struct PositionPnLState {

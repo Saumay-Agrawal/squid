@@ -5,14 +5,14 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 import {PositionLiquidityAmounts} from "../libraries/PositionLiquidityAmounts.sol";
-import {PositionSummary, PositionPnL, PositionPnLState} from "../types/PositionMetrics.sol";
+import {PositionSummary, PositionLiquidity, PositionPnL, PositionPnLState} from "../types/PositionMetrics.sol";
 
 abstract contract SquidPositionMetrics {
     using PoolIdLibrary for PoolKey;
@@ -20,11 +20,21 @@ abstract contract SquidPositionMetrics {
     error PositionNotTracked(bytes32 positionId);
 
     mapping(bytes32 positionId => PositionSummary) internal positionSummariesById;
+    mapping(bytes32 positionId => PositionLiquidity) internal positionLiquiditiesById;
     mapping(bytes32 positionId => PositionPnLState) internal positionPnLStatesById;
+    mapping(PoolId poolId => bytes32[] positionIds) internal trackedPositionIdsByPool;
 
     function getPositionSummary(bytes32 positionId) external view returns (PositionSummary memory summary) {
         summary = positionSummariesById[positionId];
         if (!summary.initialized) revert PositionNotTracked(positionId);
+        summary.age = uint64(block.timestamp - summary.createdTimestamp);
+    }
+
+    function getPositionLiquidity(bytes32 positionId) external view returns (PositionLiquidity memory liquidity) {
+        PositionSummary storage summary = positionSummariesById[positionId];
+        if (!summary.initialized) revert PositionNotTracked(positionId);
+
+        liquidity = positionLiquiditiesById[positionId];
     }
 
     function getPositionPnL(bytes32 positionId) external view returns (PositionPnL memory pnl) {
@@ -52,6 +62,7 @@ abstract contract SquidPositionMetrics {
         internal
     {
         bytes32 positionId = _syncPositionSummary(owner, key, params);
+        _syncPositionLiquidity(positionSummariesById[positionId]);
         PositionPnLState storage pnlState = positionPnLStatesById[positionId];
 
         _recordRealizedFees(pnlState, feesAccrued);
@@ -77,7 +88,33 @@ abstract contract SquidPositionMetrics {
 
         _recordPrincipalDecrease(pnlState, liquidityBefore, liquidityRemoved);
         _recordRealizedFees(pnlState, feesAccrued);
+        _syncPositionLiquidity(positionSummariesById[positionId]);
         _syncPositionSummary(owner, key, params);
+    }
+
+    function _recordPositionSwap(PoolKey calldata key, SwapParams calldata, BalanceDelta delta) internal {
+        PoolId poolId = key.toId();
+        bytes32[] storage positionIds = trackedPositionIdsByPool[poolId];
+        uint256 volume0 = _unsignedAmount0(delta);
+        uint256 volume1 = _unsignedAmount1(delta);
+
+        for (uint256 i; i < positionIds.length; ++i) {
+            bytes32 positionId = positionIds[i];
+            PositionSummary storage summary = positionSummariesById[positionId];
+            PositionLiquidity storage liquidity = positionLiquiditiesById[positionId];
+
+            _syncPositionLiquidity(summary);
+
+            if (liquidity.totalLiquidity == 0) continue;
+
+            liquidity.lifetimeSwapVolume0 += volume0;
+            liquidity.lifetimeSwapVolume1 += volume1;
+
+            if (liquidity.activeLiquidity > 0) {
+                liquidity.activeSwapVolume0 += volume0;
+                liquidity.activeSwapVolume1 += volume1;
+            }
+        }
     }
 
     function _syncPositionSummary(address owner, PoolKey calldata key, ModifyLiquidityParams calldata params)
@@ -98,11 +135,12 @@ abstract contract SquidPositionMetrics {
             summary.tickLower = params.tickLower;
             summary.tickUpper = params.tickUpper;
             summary.salt = params.salt;
+            trackedPositionIdsByPool[poolId].push(positionId);
         }
 
         summary.updatedBlock = uint64(block.number);
         summary.updatedTimestamp = uint64(block.timestamp);
-        summary.active = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(owner, params)) > 0;
+        summary.active = _getPositionLiquidity(poolId, summary) > 0;
     }
 
     function _buildPositionPnL(PositionSummary storage summary, PositionPnLState storage pnlState)
@@ -129,8 +167,7 @@ abstract contract SquidPositionMetrics {
         returns (uint256 amount0, uint256 amount1)
     {
         PoolId poolId = PoolId.wrap(summary.poolId);
-        bytes32 corePositionId = Position.calculatePositionKey(summary.owner, summary.tickLower, summary.tickUpper, summary.salt);
-        (uint128 liquidity,,) = StateLibrary.getPositionInfo(_poolManager(), poolId, corePositionId);
+        (uint128 liquidity,,) = _getPositionInfo(poolId, summary);
         if (liquidity == 0) return (0, 0);
 
         (uint160 sqrtPriceX96,,,) = StateLibrary.getSlot0(_poolManager(), poolId);
@@ -144,9 +181,8 @@ abstract contract SquidPositionMetrics {
 
     function _getUncollectedFees(PositionSummary storage summary) internal view returns (uint256 fee0, uint256 fee1) {
         PoolId poolId = PoolId.wrap(summary.poolId);
-        bytes32 corePositionId = Position.calculatePositionKey(summary.owner, summary.tickLower, summary.tickUpper, summary.salt);
         (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128) =
-            StateLibrary.getPositionInfo(_poolManager(), poolId, corePositionId);
+            _getPositionInfo(poolId, summary);
         if (liquidity == 0) return (0, 0);
 
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
@@ -181,13 +217,56 @@ abstract contract SquidPositionMetrics {
         pnlState.principalAmount1 -= FullMath.mulDiv(pnlState.principalAmount1, liquidityRemoved, liquidityBefore);
     }
 
+    function _syncPositionLiquidity(PositionSummary storage summary) internal {
+        PoolId poolId = PoolId.wrap(summary.poolId);
+        uint128 totalLiquidity = _getPositionLiquidity(poolId, summary);
+        PositionLiquidity storage liquidity = positionLiquiditiesById[summary.positionId];
+
+        liquidity.totalLiquidity = totalLiquidity;
+        liquidity.activeLiquidity = _isPositionInRange(summary, poolId) ? totalLiquidity : 0;
+        summary.active = totalLiquidity > 0;
+    }
+
+    function _getPositionInfo(PoolId poolId, PositionSummary storage summary)
+        internal
+        view
+        returns (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128)
+    {
+        return StateLibrary.getPositionInfo(_poolManager(), poolId, _corePositionId(summary));
+    }
+
+    function _getPositionLiquidity(PoolId poolId, PositionSummary storage summary) internal view returns (uint128 liquidity) {
+        liquidity = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(summary));
+    }
+
+    function _isPositionInRange(PositionSummary storage summary, PoolId poolId) internal view returns (bool) {
+        if (_getPositionLiquidity(poolId, summary) == 0) return false;
+
+        (, int24 tick,,) = StateLibrary.getSlot0(_poolManager(), poolId);
+        return tick >= summary.tickLower && tick < summary.tickUpper;
+    }
+
     function _corePositionId(address owner, ModifyLiquidityParams calldata params) internal pure returns (bytes32) {
         return Position.calculatePositionKey(owner, params.tickLower, params.tickUpper, params.salt);
+    }
+
+    function _corePositionId(PositionSummary storage summary) internal view returns (bytes32) {
+        return Position.calculatePositionKey(summary.owner, summary.tickLower, summary.tickUpper, summary.salt);
     }
 
     function _absoluteLiquidityDelta(int256 liquidityDelta) internal pure returns (uint128 liquidity) {
         uint256 absoluteDelta = liquidityDelta < 0 ? uint256(-liquidityDelta) : uint256(liquidityDelta);
         liquidity = uint128(absoluteDelta);
+    }
+
+    function _unsignedAmount0(BalanceDelta delta) internal pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount0(delta);
+        amount = value < 0 ? uint256(uint128(-value)) : uint256(uint128(value));
+    }
+
+    function _unsignedAmount1(BalanceDelta delta) internal pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount1(delta);
+        amount = value < 0 ? uint256(uint128(-value)) : uint256(uint128(value));
     }
 
     function _positiveAmount0(BalanceDelta delta) internal pure returns (uint256 amount) {

@@ -57,12 +57,13 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
-    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata)
         internal
         override
         returns (bytes4, int128)
     {
         _recordPoolSwap(key);
+        _recordPositionSwap(key, params, delta);
         return (IHooks.afterSwap.selector, 0);
     }
 
