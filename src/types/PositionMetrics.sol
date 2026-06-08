@@ -15,3 +15,21 @@ struct PositionSummary {
     int24 tickUpper;
     bytes32 salt;
 }
+
+struct PositionPnLState {
+    uint256 principalAmount0;
+    uint256 principalAmount1;
+    uint256 realizedFeeAmount0;
+    uint256 realizedFeeAmount1;
+}
+
+struct PositionPnL {
+    uint256 principalAmount0;
+    uint256 principalAmount1;
+    uint256 currentAmount0;
+    uint256 currentAmount1;
+    uint256 feeAccumulated0;
+    uint256 feeAccumulated1;
+    int256 netPnl0;
+    int256 netPnl1;
+}

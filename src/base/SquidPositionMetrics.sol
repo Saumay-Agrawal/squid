@@ -4,11 +4,15 @@ pragma solidity ^0.8.24;
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
-import {PositionSummary} from "../types/PositionMetrics.sol";
+import {PositionLiquidityAmounts} from "../libraries/PositionLiquidityAmounts.sol";
+import {PositionSummary, PositionPnL, PositionPnLState} from "../types/PositionMetrics.sol";
 
 abstract contract SquidPositionMetrics {
     using PoolIdLibrary for PoolKey;
@@ -16,10 +20,18 @@ abstract contract SquidPositionMetrics {
     error PositionNotTracked(bytes32 positionId);
 
     mapping(bytes32 positionId => PositionSummary) internal positionSummariesById;
+    mapping(bytes32 positionId => PositionPnLState) internal positionPnLStatesById;
 
     function getPositionSummary(bytes32 positionId) external view returns (PositionSummary memory summary) {
         summary = positionSummariesById[positionId];
         if (!summary.initialized) revert PositionNotTracked(positionId);
+    }
+
+    function getPositionPnL(bytes32 positionId) external view returns (PositionPnL memory pnl) {
+        PositionSummary storage summary = positionSummariesById[positionId];
+        if (!summary.initialized) revert PositionNotTracked(positionId);
+
+        pnl = _buildPositionPnL(summary, positionPnLStatesById[positionId]);
     }
 
     function getPositionId(address owner, PoolId poolId, int24 tickLower, int24 tickUpper, bytes32 salt)
@@ -30,21 +42,50 @@ abstract contract SquidPositionMetrics {
         positionId = keccak256(abi.encode(owner, PoolId.unwrap(poolId), tickLower, tickUpper, salt));
     }
 
-    function _recordPositionOpenOrIncrease(address owner, PoolKey calldata key, ModifyLiquidityParams calldata params)
+    function _recordPositionOpenOrIncrease(
+        address owner,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued
+    )
         internal
     {
-        _syncPositionSummary(owner, key, params);
+        bytes32 positionId = _syncPositionSummary(owner, key, params);
+        PositionPnLState storage pnlState = positionPnLStatesById[positionId];
+
+        _recordRealizedFees(pnlState, feesAccrued);
+        _recordPrincipalIncrease(pnlState, delta - feesAccrued);
     }
 
-    function _recordPositionDecreaseOrClose(address owner, PoolKey calldata key, ModifyLiquidityParams calldata params)
+    function _recordPositionDecreaseOrClose(
+        address owner,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta,
+        BalanceDelta feesAccrued
+    )
         internal
     {
-        _syncPositionSummary(owner, key, params);
-    }
-
-    function _syncPositionSummary(address owner, PoolKey calldata key, ModifyLiquidityParams calldata params) private {
         PoolId poolId = key.toId();
         bytes32 positionId = getPositionId(owner, poolId, params.tickLower, params.tickUpper, params.salt);
+        PositionPnLState storage pnlState = positionPnLStatesById[positionId];
+
+        uint128 liquidityAfter = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(owner, params));
+        uint128 liquidityRemoved = _absoluteLiquidityDelta(params.liquidityDelta);
+        uint128 liquidityBefore = liquidityAfter + liquidityRemoved;
+
+        _recordPrincipalDecrease(pnlState, liquidityBefore, liquidityRemoved);
+        _recordRealizedFees(pnlState, feesAccrued);
+        _syncPositionSummary(owner, key, params);
+    }
+
+    function _syncPositionSummary(address owner, PoolKey calldata key, ModifyLiquidityParams calldata params)
+        private
+        returns (bytes32 positionId)
+    {
+        PoolId poolId = key.toId();
+        positionId = getPositionId(owner, poolId, params.tickLower, params.tickUpper, params.salt);
         PositionSummary storage summary = positionSummariesById[positionId];
 
         if (!summary.initialized) {
@@ -61,8 +102,116 @@ abstract contract SquidPositionMetrics {
 
         summary.updatedBlock = uint64(block.number);
         summary.updatedTimestamp = uint64(block.timestamp);
-        bytes32 corePositionId = Position.calculatePositionKey(owner, params.tickLower, params.tickUpper, params.salt);
-        summary.active = StateLibrary.getPositionLiquidity(_poolManager(), poolId, corePositionId) > 0;
+        summary.active = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(owner, params)) > 0;
+    }
+
+    function _buildPositionPnL(PositionSummary storage summary, PositionPnLState storage pnlState)
+        internal
+        view
+        returns (PositionPnL memory pnl)
+    {
+        (uint256 liveAmount0, uint256 liveAmount1) = _getLiveLiquidityAmounts(summary);
+        (uint256 pendingFee0, uint256 pendingFee1) = _getUncollectedFees(summary);
+
+        pnl.principalAmount0 = pnlState.principalAmount0;
+        pnl.principalAmount1 = pnlState.principalAmount1;
+        pnl.currentAmount0 = liveAmount0 + pendingFee0;
+        pnl.currentAmount1 = liveAmount1 + pendingFee1;
+        pnl.feeAccumulated0 = pnlState.realizedFeeAmount0 + pendingFee0;
+        pnl.feeAccumulated1 = pnlState.realizedFeeAmount1 + pendingFee1;
+        pnl.netPnl0 = _signedDiff(pnl.currentAmount0, pnl.principalAmount0);
+        pnl.netPnl1 = _signedDiff(pnl.currentAmount1, pnl.principalAmount1);
+    }
+
+    function _getLiveLiquidityAmounts(PositionSummary storage summary)
+        internal
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
+        PoolId poolId = PoolId.wrap(summary.poolId);
+        bytes32 corePositionId = Position.calculatePositionKey(summary.owner, summary.tickLower, summary.tickUpper, summary.salt);
+        (uint128 liquidity,,) = StateLibrary.getPositionInfo(_poolManager(), poolId, corePositionId);
+        if (liquidity == 0) return (0, 0);
+
+        (uint160 sqrtPriceX96,,,) = StateLibrary.getSlot0(_poolManager(), poolId);
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(summary.tickLower);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(summary.tickUpper);
+
+        return PositionLiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity
+        );
+    }
+
+    function _getUncollectedFees(PositionSummary storage summary) internal view returns (uint256 fee0, uint256 fee1) {
+        PoolId poolId = PoolId.wrap(summary.poolId);
+        bytes32 corePositionId = Position.calculatePositionKey(summary.owner, summary.tickLower, summary.tickUpper, summary.salt);
+        (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128) =
+            StateLibrary.getPositionInfo(_poolManager(), poolId, corePositionId);
+        if (liquidity == 0) return (0, 0);
+
+        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
+            StateLibrary.getFeeGrowthInside(_poolManager(), poolId, summary.tickLower, summary.tickUpper);
+
+        fee0 = FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity, 1 << 128);
+        fee1 = FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity, 1 << 128);
+    }
+
+    function _recordRealizedFees(PositionPnLState storage pnlState, BalanceDelta feesAccrued) internal {
+        pnlState.realizedFeeAmount0 += _positiveAmount0(feesAccrued);
+        pnlState.realizedFeeAmount1 += _positiveAmount1(feesAccrued);
+    }
+
+    function _recordPrincipalIncrease(PositionPnLState storage pnlState, BalanceDelta principalDelta) internal {
+        pnlState.principalAmount0 += _negativeAmount0(principalDelta);
+        pnlState.principalAmount1 += _negativeAmount1(principalDelta);
+    }
+
+    function _recordPrincipalDecrease(PositionPnLState storage pnlState, uint128 liquidityBefore, uint128 liquidityRemoved)
+        internal
+    {
+        if (liquidityRemoved == 0 || liquidityBefore == 0) return;
+
+        if (liquidityRemoved >= liquidityBefore) {
+            pnlState.principalAmount0 = 0;
+            pnlState.principalAmount1 = 0;
+            return;
+        }
+
+        pnlState.principalAmount0 -= FullMath.mulDiv(pnlState.principalAmount0, liquidityRemoved, liquidityBefore);
+        pnlState.principalAmount1 -= FullMath.mulDiv(pnlState.principalAmount1, liquidityRemoved, liquidityBefore);
+    }
+
+    function _corePositionId(address owner, ModifyLiquidityParams calldata params) internal pure returns (bytes32) {
+        return Position.calculatePositionKey(owner, params.tickLower, params.tickUpper, params.salt);
+    }
+
+    function _absoluteLiquidityDelta(int256 liquidityDelta) internal pure returns (uint128 liquidity) {
+        uint256 absoluteDelta = liquidityDelta < 0 ? uint256(-liquidityDelta) : uint256(liquidityDelta);
+        liquidity = uint128(absoluteDelta);
+    }
+
+    function _positiveAmount0(BalanceDelta delta) internal pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount0(delta);
+        if (value > 0) amount = uint128(value);
+    }
+
+    function _positiveAmount1(BalanceDelta delta) internal pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount1(delta);
+        if (value > 0) amount = uint128(value);
+    }
+
+    function _negativeAmount0(BalanceDelta delta) internal pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount0(delta);
+        if (value < 0) amount = uint256(uint128(-value));
+    }
+
+    function _negativeAmount1(BalanceDelta delta) internal pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount1(delta);
+        if (value < 0) amount = uint256(uint128(-value));
+    }
+
+    function _signedDiff(uint256 lhs, uint256 rhs) internal pure returns (int256) {
+        return lhs >= rhs ? int256(lhs - rhs) : -int256(rhs - lhs);
     }
 
     function _poolManager() internal view virtual returns (IPoolManager);

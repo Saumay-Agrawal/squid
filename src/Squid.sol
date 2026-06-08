@@ -35,12 +35,12 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
-        BalanceDelta,
-        BalanceDelta,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         _recordPoolLiquidityAdded(key, params);
-        _recordPositionOpenOrIncrease(sender, key, params);
+        _recordPositionOpenOrIncrease(sender, key, params, delta, feesAccrued);
         return (IHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -48,12 +48,12 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
-        BalanceDelta,
-        BalanceDelta,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         _recordPoolLiquidityRemoved(key, params);
-        _recordPositionDecreaseOrClose(sender, key, params);
+        _recordPositionDecreaseOrClose(sender, key, params, delta, feesAccrued);
         return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
