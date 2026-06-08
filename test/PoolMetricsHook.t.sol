@@ -24,7 +24,8 @@ contract SquidTest is Test, Deployers {
     function setUp() public {
         deployFreshManagerAndRouters();
 
-        uint160 flags = Hooks.AFTER_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG;
+        uint160 flags = Hooks.AFTER_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
+            | Hooks.AFTER_SWAP_FLAG;
         hook = Squid(address(uint160(type(uint160).max & clearAllHookPermissionsMask | flags)));
         deployCodeTo("Squid", abi.encode(manager), address(hook));
     }
@@ -52,6 +53,9 @@ contract SquidTest is Test, Deployers {
         assertEq(summary.fee, poolKey.fee);
         assertEq(summary.tickSpacing, poolKey.tickSpacing);
         assertEq(summary.initialSqrtPriceX96, initialPrice);
+        assertEq(summary.liquidity.totalLiquidity, 0);
+        assertEq(summary.liquidity.activeLiquidity, 0);
+        assertEq(summary.liquidity.peakActiveLiquidity, 0);
     }
 
     function test_symbolFallbacksDoNotBlockInitialization() public {
@@ -92,6 +96,97 @@ contract SquidTest is Test, Deployers {
 
         PoolSummary memory stored = hook.getPoolSummary(poolId);
         assertEq(stored.initialSqrtPriceX96, initialPrice);
+    }
+
+    function test_addLiquidityUpdatesPoolLiquidityMetrics() public {
+        TestToken tokenA = new TestToken("Token A", "TKNA");
+        TestToken tokenB = new TestToken("Token B", "TKNB");
+        _mintAndApprove(address(tokenA));
+        _mintAndApprove(address(tokenB));
+
+        PoolKey memory poolKey = _buildPoolKey(address(tokenA), address(tokenB));
+        manager.initialize(poolKey, uint160(TickMath.getSqrtPriceAtTick(0)));
+
+        ModifyLiquidityParams memory params =
+            ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: bytes32("alpha")});
+        modifyLiquidityRouter.modifyLiquidity(poolKey, params, "");
+
+        PoolSummary memory summary = hook.getPoolSummary(poolKey.toId());
+        assertEq(summary.liquidity.totalLiquidity, 1e18);
+        assertEq(summary.liquidity.activeLiquidity, 1e18);
+        assertEq(summary.liquidity.peakActiveLiquidity, 1e18);
+    }
+
+    function test_outOfRangeLiquidityOnlyAffectsTotalLiquidity() public {
+        TestToken tokenA = new TestToken("Token A", "TKNA");
+        TestToken tokenB = new TestToken("Token B", "TKNB");
+        _mintAndApprove(address(tokenA));
+        _mintAndApprove(address(tokenB));
+
+        PoolKey memory poolKey = _buildPoolKey(address(tokenA), address(tokenB));
+        manager.initialize(poolKey, uint160(TickMath.getSqrtPriceAtTick(0)));
+
+        ModifyLiquidityParams memory params =
+            ModifyLiquidityParams({tickLower: 120, tickUpper: 240, liquidityDelta: 1e18, salt: bytes32("alpha")});
+        modifyLiquidityRouter.modifyLiquidity(poolKey, params, "");
+
+        PoolSummary memory summary = hook.getPoolSummary(poolKey.toId());
+        assertEq(summary.liquidity.totalLiquidity, 1e18);
+        assertEq(summary.liquidity.activeLiquidity, 0);
+        assertEq(summary.liquidity.peakActiveLiquidity, 0);
+    }
+
+    function test_removeLiquidityUpdatesTotalAndActiveLiquidity() public {
+        TestToken tokenA = new TestToken("Token A", "TKNA");
+        TestToken tokenB = new TestToken("Token B", "TKNB");
+        _mintAndApprove(address(tokenA));
+        _mintAndApprove(address(tokenB));
+
+        PoolKey memory poolKey = _buildPoolKey(address(tokenA), address(tokenB));
+        manager.initialize(poolKey, uint160(TickMath.getSqrtPriceAtTick(0)));
+
+        ModifyLiquidityParams memory addParams =
+            ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 3e18, salt: bytes32("alpha")});
+        modifyLiquidityRouter.modifyLiquidity(poolKey, addParams, "");
+
+        ModifyLiquidityParams memory removeParams =
+            ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: -1e18, salt: bytes32("alpha")});
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, "");
+
+        PoolSummary memory summary = hook.getPoolSummary(poolKey.toId());
+        assertEq(summary.liquidity.totalLiquidity, 2e18);
+        assertEq(summary.liquidity.activeLiquidity, 2e18);
+        assertEq(summary.liquidity.peakActiveLiquidity, 3e18);
+    }
+
+    function test_swapRefreshesActiveLiquidityAndPreservesPeak() public {
+        TestToken tokenA = new TestToken("Token A", "TKNA");
+        TestToken tokenB = new TestToken("Token B", "TKNB");
+        _mintAndApprove(address(tokenA));
+        _mintAndApprove(address(tokenB));
+
+        PoolKey memory poolKey = _buildPoolKey(address(tokenA), address(tokenB));
+        manager.initialize(poolKey, uint160(TickMath.getSqrtPriceAtTick(0)));
+
+        ModifyLiquidityParams memory currentRangeParams =
+            ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: bytes32("alpha")});
+        ModifyLiquidityParams memory upperRangeParams =
+            ModifyLiquidityParams({tickLower: 120, tickUpper: 240, liquidityDelta: 2e18, salt: bytes32("beta")});
+
+        modifyLiquidityRouter.modifyLiquidity(poolKey, currentRangeParams, "");
+        modifyLiquidityRouter.modifyLiquidity(poolKey, upperRangeParams, "");
+
+        PoolSummary memory beforeSwap = hook.getPoolSummary(poolKey.toId());
+        assertEq(beforeSwap.liquidity.totalLiquidity, 3e18);
+        assertEq(beforeSwap.liquidity.activeLiquidity, 1e18);
+        assertEq(beforeSwap.liquidity.peakActiveLiquidity, 1e18);
+
+        swap(poolKey, true, -1e18, "");
+
+        PoolSummary memory afterSwap = hook.getPoolSummary(poolKey.toId());
+        assertEq(afterSwap.liquidity.totalLiquidity, 3e18);
+        assertEq(afterSwap.liquidity.activeLiquidity, 0);
+        assertEq(afterSwap.liquidity.peakActiveLiquidity, 1e18);
     }
 
     function test_twapViewRevertsUntilOracleSupportExists() public {

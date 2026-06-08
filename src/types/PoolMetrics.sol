@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+struct PoolLiquidity {
+    uint128 totalLiquidity;
+    uint128 activeLiquidity;
+    uint128 peakActiveLiquidity;
+}
+
 struct PoolSummary {
     bytes32 poolId;
     bool initialized;
@@ -13,4 +19,5 @@ struct PoolSummary {
     uint24 fee;
     int24 tickSpacing;
     uint160 initialSqrtPriceX96;
+    PoolLiquidity liquidity;
 }

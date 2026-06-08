@@ -6,7 +6,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 
 import {SquidPoolMetrics} from "./base/SquidPoolMetrics.sol";
@@ -19,6 +19,7 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         permissions.afterInitialize = true;
         permissions.afterAddLiquidity = true;
         permissions.afterRemoveLiquidity = true;
+        permissions.afterSwap = true;
     }
 
     function _afterInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96, int24)
@@ -38,6 +39,7 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
+        _recordPoolLiquidityAdded(key, params);
         _recordPositionOpenOrIncrease(sender, key, params);
         return (IHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
@@ -50,8 +52,18 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
+        _recordPoolLiquidityRemoved(key, params);
         _recordPositionDecreaseOrClose(sender, key, params);
         return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+    }
+
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
+        internal
+        override
+        returns (bytes4, int128)
+    {
+        _recordPoolSwap(key);
+        return (IHooks.afterSwap.selector, 0);
     }
 
     function _poolManager() internal view override(SquidPoolMetrics, SquidPositionMetrics) returns (IPoolManager) {

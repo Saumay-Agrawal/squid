@@ -6,8 +6,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
-import {PoolSummary} from "../types/PoolMetrics.sol";
+import {PoolLiquidity, PoolSummary} from "../types/PoolMetrics.sol";
 import {TokenSymbolResolver} from "../libraries/TokenSymbolResolver.sol";
 
 abstract contract SquidPoolMetrics {
@@ -16,6 +17,7 @@ abstract contract SquidPoolMetrics {
     error PoolAlreadyRegistered(bytes32 poolId);
     error PoolNotRegistered(bytes32 poolId);
     error TwapNotSupported();
+    error LiquidityDeltaOverflow();
 
     mapping(PoolId poolId => PoolSummary) internal poolSummariesById;
 
@@ -61,6 +63,47 @@ abstract contract SquidPoolMetrics {
         summary.fee = key.fee;
         summary.tickSpacing = key.tickSpacing;
         summary.initialSqrtPriceX96 = sqrtPriceX96;
+        _syncPoolLiquidity(summary, poolId);
+    }
+
+    function _recordPoolLiquidityAdded(PoolKey calldata key, ModifyLiquidityParams calldata params) internal {
+        PoolId poolId = key.toId();
+        PoolSummary storage summary = poolSummariesById[poolId];
+        _requirePoolRegistered(poolId);
+
+        summary.liquidity.totalLiquidity += _liquidityDeltaToUint128(params.liquidityDelta);
+        _syncPoolLiquidity(summary, poolId);
+    }
+
+    function _recordPoolLiquidityRemoved(PoolKey calldata key, ModifyLiquidityParams calldata params) internal {
+        PoolId poolId = key.toId();
+        PoolSummary storage summary = poolSummariesById[poolId];
+        _requirePoolRegistered(poolId);
+
+        summary.liquidity.totalLiquidity -= _liquidityDeltaToUint128(-params.liquidityDelta);
+        _syncPoolLiquidity(summary, poolId);
+    }
+
+    function _recordPoolSwap(PoolKey calldata key) internal {
+        PoolId poolId = key.toId();
+        PoolSummary storage summary = poolSummariesById[poolId];
+        _requirePoolRegistered(poolId);
+
+        _syncPoolLiquidity(summary, poolId);
+    }
+
+    function _syncPoolLiquidity(PoolSummary storage summary, PoolId poolId) private {
+        PoolLiquidity storage liquidity = summary.liquidity;
+        liquidity.activeLiquidity = StateLibrary.getLiquidity(_poolManager(), poolId);
+
+        if (liquidity.activeLiquidity > liquidity.peakActiveLiquidity) {
+            liquidity.peakActiveLiquidity = liquidity.activeLiquidity;
+        }
+    }
+
+    function _liquidityDeltaToUint128(int256 liquidityDelta) private pure returns (uint128 liquidity) {
+        if (liquidityDelta < 0 || uint256(liquidityDelta) > type(uint128).max) revert LiquidityDeltaOverflow();
+        liquidity = uint128(uint256(liquidityDelta));
     }
 
     function _requirePoolRegistered(PoolId poolId) internal view {
