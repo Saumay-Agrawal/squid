@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Squid UI",
-  description: "Minimal passive LP dashboard for local Squid pool and position snapshots.",
+  description: "Seeded Squid market dashboard for local pool, LP, and position snapshots.",
 };
 
 export default function RootLayout({

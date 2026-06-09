@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartNoAxesColumn, Droplets, UserRound, Wallet } from "lucide-react";
+import { ChartNoAxesColumn, Droplets, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { LpsView } from "@/components/lps-view";
@@ -53,7 +53,7 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-lg font-semibold tracking-tight">Squid LP Control Room</p>
-              <p className="truncate text-sm text-muted-foreground">Local simulation telemetry for pool health, LP concentration, and wallet exposure.</p>
+              <p className="truncate text-sm text-muted-foreground">{data.seedManifest.description}</p>
             </div>
           </div>
 
@@ -85,14 +85,14 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
                 active={section === "pools"}
                 icon={Droplets}
                 label="Pools"
-                meta={`${data.poolSummaries.length} pool snapshots`}
+                meta={`${data.seedManifest.poolCount} seeded pools`}
                 onClick={() => setSection("pools")}
               />
               <SectionButton
                 active={section === "lps"}
                 icon={ChartNoAxesColumn}
                 label="LPs"
-                meta={`${data.lpSummaries.length} wallets tracked`}
+                meta={`${data.seedManifest.lpCount} seeded wallets`}
                 onClick={() => setSection("lps")}
               />
               <SectionButton
@@ -104,7 +104,7 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
               />
 
               <div className="pt-3">
-                <SidebarContext section={section} profile={profile} />
+                <SidebarContext section={section} profile={profile} data={data} />
               </div>
             </CardContent>
           </Card>
@@ -162,23 +162,25 @@ function SectionButton({
 function SidebarContext({
   section,
   profile,
+  data,
 }: {
   section: Section;
   profile: SquidDashboardData["lpSummaries"][number] | null;
+  data: SquidDashboardData;
 }) {
   const config =
     section === "pools"
       ? {
           title: "Pools view",
-          note: "Compare fee tiers, active liquidity, and LP density across all simulated pools.",
-          value: "Market-wide",
+          note: `${data.market.basePair} across ${data.seedManifest.positionCount} seeded positions.`,
+          value: `${data.seedManifest.poolCount} pools`,
           positive: undefined,
         }
       : section === "lps"
         ? {
             title: "LP roster",
-            note: "Browse every tracked wallet and inspect how capital is distributed across pools.",
-            value: "Cross-wallet",
+            note: `${data.seedManifest.swapCount} seeded swaps across ${data.seedManifest.lpCount} wallets.`,
+            value: `${data.seedManifest.lpCount} wallets`,
             positive: undefined,
           }
         : {
@@ -200,6 +202,16 @@ function SidebarContext({
         {config.value}
       </div>
       <div className="mt-2 text-sm text-muted-foreground">{config.note}</div>
+      <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between gap-3">
+          <span>PoolManager</span>
+          <span className="font-mono text-[11px] text-foreground">{data.contracts.poolManager.slice(0, 8)}...{data.contracts.poolManager.slice(-4)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span>Squid hook</span>
+          <span className="font-mono text-[11px] text-foreground">{data.contracts.squid.slice(0, 8)}...{data.contracts.squid.slice(-4)}</span>
+        </div>
+      </div>
     </div>
   );
 }

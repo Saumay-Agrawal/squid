@@ -4,14 +4,15 @@ import { ChevronDown, Wallet } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { shortenAddress } from "@/lib/utils";
+import type { KnownAddress } from "@/lib/dashboard";
+import { shortenAddress, startCase } from "@/lib/utils";
 
 export function ConnectWallet({
   addresses,
   selectedAddress,
   onSelectAddress,
 }: {
-  addresses: Array<{ address: string; label: string }>;
+  addresses: KnownAddress[];
   selectedAddress: string;
   onSelectAddress: (address: string) => void;
 }) {
@@ -41,7 +42,10 @@ export function ConnectWallet({
               }}
             >
               <div>
-                <div className="text-sm font-medium">{entry.label}</div>
+                <div className="text-sm font-medium">
+                  {entry.label}
+                  {entry.tier ? <span className="ml-2 text-xs text-muted-foreground">{startCase(entry.tier)}</span> : null}
+                </div>
                 <div className="font-mono text-xs text-muted-foreground">{shortenAddress(entry.address)}</div>
               </div>
               {entry.address === selectedAddress ? <span className="text-xs text-primary">Selected</span> : null}

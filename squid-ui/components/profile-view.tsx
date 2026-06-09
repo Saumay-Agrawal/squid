@@ -1,7 +1,12 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn, formatAmount, formatFeeTier, formatSignedAmount, shortenAddress, shortenHash, startCase } from "@/lib/utils";
 import type { LpSummary } from "@/lib/dashboard";
-import { formatAmount, formatSignedAmount, shortenAddress, shortenHash } from "@/lib/utils";
 
 export function ProfileView({
   lps,
@@ -26,14 +31,16 @@ export function ProfileView({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <Card className="overflow-hidden border-primary/10 bg-card/88 shadow-lg shadow-primary/5">
         <CardHeader className="gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-xl">{selectedLabel ?? profile.label}</CardTitle>
                 <Badge>You</Badge>
+                {profile.tier ? <Badge variant="secondary">{startCase(profile.tier)}</Badge> : null}
+                {profile.anchor ? <Badge variant="outline">Anchor</Badge> : null}
               </div>
               <CardDescription>{shortenAddress(profile.address)}</CardDescription>
             </div>
@@ -46,7 +53,7 @@ export function ProfileView({
             <StatLine label="Net PnL" value={formatSignedAmount(profile.totalPnl)} positive={profile.totalPnl >= 0n} />
           </div>
         </CardHeader>
-        <CardContent className="grid gap-3 border-t border-border/70 bg-background/35 pt-5 sm:grid-cols-3">
+        <CardContent className="grid gap-3 border-t border-border/70 bg-background/35 pt-5 sm:grid-cols-2 xl:grid-cols-4">
           <FocusBlock
             title="Exposure"
             value={`${profile.poolCount} pools`}
@@ -62,54 +69,166 @@ export function ProfileView({
             value={formatAmount(profile.totalFees)}
             note="Total accrued fees across all grouped positions."
           />
+          <FocusBlock
+            title="Planned positions"
+            value={profile.plannedPositions === null ? "N/A" : String(profile.plannedPositions)}
+            note="Original seeded target from the simulation manifest."
+          />
         </CardContent>
       </Card>
 
-      <div className="grid gap-4">
-        {profile.groups.map((group) => (
-          <Card key={`${profile.address}-${group.poolId}`} className="overflow-hidden">
-            <CardHeader className="gap-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle className="text-base">{group.poolLabel}</CardTitle>
-                  <CardDescription>{group.scenarioName}</CardDescription>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{group.positionCount} positions</Badge>
-                  <Badge variant="outline">{group.activePositionCount} active</Badge>
-                </div>
-              </div>
-              <div className="grid gap-3 text-sm sm:grid-cols-3">
-                <StatLine label="Liquidity" value={formatAmount(group.totalLiquidity)} />
-                <StatLine label="Fees" value={formatAmount(group.totalFees)} />
-                <StatLine label="PnL" value={formatSignedAmount(group.totalPnl)} positive={group.totalPnl >= 0n} />
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-3 border-t border-border/70 bg-background/35 pt-4">
-              {group.positions.map((position) => (
-                <div key={position.positionId} className="rounded-3xl border border-border/70 bg-background/80 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="font-medium">
-                        Position range [{position.tickLower}, {position.tickUpper}]
-                      </div>
-                      <div className="mt-1 font-mono text-xs text-muted-foreground">{shortenHash(position.positionId)}</div>
+      <ProfilePoolsBoard profile={profile} />
+    </div>
+  );
+}
+
+function ProfilePoolsBoard({ profile }: { profile: LpSummary }) {
+  const [expandedPoolId, setExpandedPoolId] = useState<string | null>(profile.groups[0]?.poolId ?? null);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="gap-2">
+        <CardTitle className="text-xl">Your pools</CardTitle>
+        <CardDescription>Expand a pool to inspect its positions inline instead of browsing separate cards.</CardDescription>
+      </CardHeader>
+      <CardContent className="px-0 pb-0">
+        <div className="space-y-px">
+          {profile.groups.map((group) => {
+            const isExpanded = expandedPoolId === group.poolId;
+            const detailId = `profile-pool-${group.poolId}`;
+
+            return (
+              <div key={group.poolId} className="border-t border-border/60 first:border-t-0">
+                <div className="grid items-center gap-3 px-6 py-4 text-sm lg:grid-cols-[minmax(0,1.6fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_40px]">
+                  <div>
+                    <div className="font-semibold">{group.poolLabel}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Pool {group.poolIndex + 1} · {formatFeeTier(group.fee)} fee · spacing {group.tickSpacing}
                     </div>
-                    <Badge variant={position.active ? "default" : "outline"} className={position.active ? "bg-emerald-600 text-white" : ""}>
-                      {position.active ? "Active" : "Inactive"}
-                    </Badge>
                   </div>
-                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-                    <StatLine label="Liquidity" value={formatAmount(position.liquidity)} />
-                    <StatLine label="Fees" value={formatAmount(position.fees)} />
-                    <StatLine label="PnL" value={formatSignedAmount(position.netPnl)} positive={position.netPnl >= 0n} />
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Liquidity</div>
+                    <div className="mt-1 font-medium">{formatAmount(group.totalLiquidity)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Fees</div>
+                    <div className="mt-1 font-medium">{formatAmount(group.totalFees)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">PnL</div>
+                    <PnlValue value={formatSignedAmount(group.totalPnl)} positive={group.totalPnl >= 0n} className="mt-1 font-medium" />
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Positions</div>
+                    <div className="mt-1">
+                      <MetricStack primary={String(group.positionCount)} secondary={`${group.activePositionCount} active`} />
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-controls={detailId}
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} ${group.poolLabel}`}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-background/70 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                      onClick={() => setExpandedPoolId(isExpanded ? null : group.poolId)}
+                    >
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded ? "rotate-180" : "")} />
+                    </button>
                   </div>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                {isExpanded ? (
+                  <div id={detailId} className="border-t border-border/60 bg-muted/20 px-6 py-5">
+                    <div className="mx-auto max-w-5xl">
+                      <div className="grid gap-3 text-sm sm:grid-cols-3">
+                        <StatLine label="Liquidity" value={formatAmount(group.totalLiquidity)} />
+                        <StatLine label="Fees" value={formatAmount(group.totalFees)} />
+                        <StatLine label="PnL" value={formatSignedAmount(group.totalPnl)} positive={group.totalPnl >= 0n} />
+                      </div>
+                      <div className="mt-4">
+                        <ProfilePositionsBoard positions={group.positions} groupKey={`profile-${profile.address}-${group.poolId}`} />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProfilePositionsBoard({
+  positions,
+  groupKey,
+}: {
+  positions: LpSummary["groups"][number]["positions"];
+  groupKey: string;
+}) {
+  const [expandedPositionId, setExpandedPositionId] = useState<string | null>(positions[0]?.positionId ?? null);
+
+  return (
+    <div className="space-y-2">
+      {positions.map((position) => {
+        const isExpanded = expandedPositionId === position.positionId;
+        const detailId = `${groupKey}-${position.positionId}`;
+
+        return (
+          <div key={position.positionId} className="overflow-hidden rounded-2xl border border-border/60 bg-card/75">
+            <div className="grid items-center gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.4fr)_minmax(140px,0.7fr)_minmax(120px,0.5fr)_minmax(120px,0.5fr)_40px]">
+              <div>
+                <div className="font-medium">
+                  Range [{position.tickLower}, {position.tickUpper}]
+                </div>
+                <div className="mt-1 font-mono text-xs text-muted-foreground">{shortenHash(position.positionId)}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Status</div>
+                <div className="mt-1">
+                  <Badge variant={position.active ? "default" : "outline"} className={position.active ? "bg-emerald-600 text-white" : ""}>
+                    {position.active ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Liquidity</div>
+                <div className="mt-1 font-medium">{formatAmount(position.liquidity)}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">PnL</div>
+                <PnlValue value={formatSignedAmount(position.netPnl)} positive={position.netPnl >= 0n} className="mt-1 font-medium" />
+              </div>
+              <div className="text-right">
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  aria-controls={detailId}
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} position ${shortenHash(position.positionId)}`}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-background/70 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  onClick={() => setExpandedPositionId(isExpanded ? null : position.positionId)}
+                >
+                  <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded ? "rotate-180" : "")} />
+                </button>
+              </div>
+            </div>
+            {isExpanded ? (
+              <div id={detailId} className="border-t border-border/60 bg-background/55 px-4 py-4">
+                <div className="grid gap-3 text-sm sm:grid-cols-3">
+                  <StatLine label="Position ID" value={shortenHash(position.positionId)} />
+                  <StatLine label="Range width" value={String(position.tickUpper - position.tickLower)} />
+                  <StatLine label="Active liquidity" value={formatAmount(position.activeLiquidity)} />
+                </div>
+                <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                  <StatLine label="Total liquidity" value={formatAmount(position.liquidity)} />
+                  <StatLine label="Fees accrued" value={formatAmount(position.fees)} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -141,4 +260,25 @@ function FocusBlock({ title, value, note }: { title: string; value: string; note
       <div className="mt-1 text-sm text-muted-foreground">{note}</div>
     </div>
   );
+}
+
+function MetricStack({ primary, secondary }: { primary: string; secondary: string }) {
+  return (
+    <div>
+      <div className="font-medium">{primary}</div>
+      <div className="text-xs text-muted-foreground">{secondary}</div>
+    </div>
+  );
+}
+
+function PnlValue({
+  value,
+  positive,
+  className,
+}: {
+  value: string;
+  positive: boolean;
+  className?: string;
+}) {
+  return <div className={cn(positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400", className)}>{value}</div>;
 }

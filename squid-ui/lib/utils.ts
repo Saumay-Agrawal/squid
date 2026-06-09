@@ -52,3 +52,10 @@ export function formatSignedAmount(value: bigint) {
   return `${value > 0n ? "+" : "-"}${formatAmount(value > 0n ? value : -value)}`;
 }
 
+export function startCase(value: string) {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((segment) => `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`)
+    .join(" ");
+}
