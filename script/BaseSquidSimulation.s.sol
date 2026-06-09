@@ -30,44 +30,72 @@ import {BaseTestToken, TestToken} from "../test/helpers/TestTokens.sol";
 abstract contract BaseSquidSimulation is Script, Deployers {
     using PoolIdLibrary for PoolKey;
 
-    struct ActionEntry {
-        string actionType;
-        address actor;
-        string details;
+    uint8 internal constant POOL_COUNT = 5;
+    uint8 internal constant LP_COUNT = 10;
+    int24 internal constant INITIAL_TICK = 0;
+    uint256 internal constant SMALL_TIER_BALANCE = 250_000 ether;
+    uint256 internal constant MEDIUM_TIER_BALANCE = 750_000 ether;
+    uint256 internal constant LARGE_TIER_BALANCE = 2_000_000 ether;
+
+    struct PoolSeed {
+        string label;
+        uint24 fee;
+        int24 tickSpacing;
+        int24 initialTick;
+        PoolKey key;
+        bytes32 poolId;
     }
 
-    struct PositionRef {
+    struct LpSeed {
+        address account;
+        string label;
+        string tier;
+        bool anchor;
+        uint8 plannedPositions;
+        uint256 usdBalanceSeeded;
+        uint256 ethBalanceSeeded;
+    }
+
+    struct PositionSeed {
+        string label;
         address lp;
-        bytes32 positionId;
+        uint8 poolIndex;
         int24 tickLower;
         int24 tickUpper;
+        int256 liquidityDelta;
         bytes32 salt;
+        bytes32 positionId;
     }
 
-    struct ScenarioResult {
-        string name;
-        string description;
-        PoolKey key;
-        address token0;
-        address token1;
-        address[] lps;
-        ActionEntry[] actions;
-        PositionRef[] positions;
+    struct SwapSeed {
+        string label;
+        address trader;
+        uint8 poolIndex;
+        bool zeroForOne;
+        int256 amountSpecified;
     }
 
     Squid internal hook;
     PoolModifyLiquidityTestWithMsgSender internal msgSenderLiquidityRouter;
+    TestToken internal usdToken;
+    TestToken internal ethToken;
 
-    address internal lpAlice;
-    address internal lpBob;
-    address internal lpCarol;
-    address internal trader;
     address internal poolManagerOwner;
+    address internal swapActor;
 
-    ScenarioResult[] internal scenarioResults;
+    PoolSeed[] internal poolSeeds;
+    LpSeed[] internal lpSeeds;
+    PositionSeed[] internal positionSeeds;
+    SwapSeed[] internal swapSeeds;
 
     function _resetSimulationState() internal {
-        delete scenarioResults;
+        delete poolSeeds;
+        delete lpSeeds;
+        delete positionSeeds;
+        delete swapSeeds;
+        delete usdToken;
+        delete ethToken;
+        delete swapActor;
     }
 
     function _setUpSimulation() internal {
@@ -79,11 +107,18 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         deployCodeTo("Squid", abi.encode(manager), address(hook));
 
         msgSenderLiquidityRouter = new PoolModifyLiquidityTestWithMsgSender(manager);
+        swapActor = address(0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65);
 
-        lpAlice = makeAddr("lpAlice");
-        lpBob = makeAddr("lpBob");
-        lpCarol = makeAddr("lpCarol");
-        trader = makeAddr("scenarioTrader");
+        _deploySeedTokens();
+        _seedLpRoster();
+        _seedPoolConfigs();
+        _prepareParticipants();
+    }
+
+    function _seedEnvironment() internal {
+        _initializePools();
+        _seedPositions();
+        _seedSwaps();
     }
 
     function deployFreshManager() internal virtual override {
@@ -108,179 +143,231 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         manager.setProtocolFeeController(feeController);
     }
 
-    function _buildPoolKey(address tokenA, address tokenB) internal view returns (PoolKey memory) {
+    function _deploySeedTokens() internal {
+        usdToken = new TestToken("Seed USD", "USD");
+        ethToken = new TestToken("Seed ETH", "ETH");
+    }
+
+    function _seedLpRoster() internal {
+        address[LP_COUNT] memory accounts = _anvilAccounts();
+        uint8[LP_COUNT] memory positionCounts = [10, 9, 8, 6, 5, 4, 4, 3, 3, 2];
+
+        for (uint8 i; i < LP_COUNT; ++i) {
+            uint256 balance = _tierBalanceForIndex(i);
+            lpSeeds.push(
+                LpSeed({
+                    account: accounts[i],
+                    label: string(abi.encodePacked("LP-", vm.toString(uint256(i + 1)))),
+                    tier: _tierNameForIndex(i),
+                    anchor: i < 3,
+                    plannedPositions: positionCounts[i],
+                    usdBalanceSeeded: balance,
+                    ethBalanceSeeded: balance
+                })
+            );
+        }
+    }
+
+    function _seedPoolConfigs() internal {
+        uint24[POOL_COUNT] memory fees = [uint24(500), uint24(1500), uint24(3000), uint24(5000), uint24(10000)];
+        int24[POOL_COUNT] memory tickSpacings = [int24(10), int24(30), int24(60), int24(120), int24(200)];
+        string[POOL_COUNT] memory labels = [
+            "usd-eth-tight",
+            "usd-eth-mid-tight",
+            "usd-eth-standard",
+            "usd-eth-wide",
+            "usd-eth-ultra-wide"
+        ];
+
+        for (uint8 i; i < POOL_COUNT; ++i) {
+            PoolKey memory key = _buildPoolKey(address(usdToken), address(ethToken), fees[i], tickSpacings[i]);
+            poolSeeds.push(
+                PoolSeed({
+                    label: labels[i],
+                    fee: fees[i],
+                    tickSpacing: tickSpacings[i],
+                    initialTick: INITIAL_TICK,
+                    key: key,
+                    poolId: PoolId.unwrap(key.toId())
+                })
+            );
+        }
+    }
+
+    function _prepareParticipants() internal {
+        _prepareParticipant(swapActor, SMALL_TIER_BALANCE);
+
+        for (uint256 i; i < lpSeeds.length; ++i) {
+            _prepareParticipant(lpSeeds[i].account, lpSeeds[i].usdBalanceSeeded);
+        }
+    }
+
+    function _prepareParticipant(address user, uint256 balancePerToken) internal {
+        BaseTestToken(address(usdToken)).mint(user, balancePerToken);
+        BaseTestToken(address(ethToken)).mint(user, balancePerToken);
+
+        vm.startPrank(user);
+        BaseTestToken(address(usdToken)).approve(address(swapRouter), type(uint256).max);
+        BaseTestToken(address(ethToken)).approve(address(swapRouter), type(uint256).max);
+        BaseTestToken(address(usdToken)).approve(address(msgSenderLiquidityRouter), type(uint256).max);
+        BaseTestToken(address(ethToken)).approve(address(msgSenderLiquidityRouter), type(uint256).max);
+        vm.stopPrank();
+    }
+
+    function _initializePools() internal {
+        for (uint256 i; i < poolSeeds.length; ++i) {
+            manager.initialize(poolSeeds[i].key, uint160(TickMath.getSqrtPriceAtTick(poolSeeds[i].initialTick)));
+        }
+    }
+
+    function _seedPositions() internal {
+        for (uint8 lpIndex; lpIndex < LP_COUNT; ++lpIndex) {
+            for (uint8 slot; slot < lpSeeds[lpIndex].plannedPositions; ++slot) {
+                _seedPositionFor(lpIndex, slot);
+            }
+        }
+    }
+
+    function _seedPositionFor(uint8 lpIndex, uint8 slot) internal {
+        LpSeed memory lp = lpSeeds[lpIndex];
+        uint8 poolIndex = _poolIndexFor(lpIndex, slot, lp.anchor);
+        int24 tickSpacing = poolSeeds[poolIndex].tickSpacing;
+        int24 widthUnits = _widthUnitsFor(lpIndex, slot, lp.anchor);
+        int24 centerUnits = _centerUnitsFor(lpIndex, slot, lp.anchor);
+        int24 tickLower = (centerUnits - widthUnits) * tickSpacing;
+        int24 tickUpper = (centerUnits + widthUnits) * tickSpacing;
+        int256 liquidityDelta = int256(uint256(_liquidityFor(lpIndex, slot, lp.anchor)));
+        bytes32 salt = keccak256(abi.encodePacked("seed-position", lpIndex, slot));
+
+        ModifyLiquidityParams memory params = ModifyLiquidityParams({
+            tickLower: tickLower,
+            tickUpper: tickUpper,
+            liquidityDelta: liquidityDelta,
+            salt: salt
+        });
+
+        _modifyLiquidityAs(lp.account, poolSeeds[poolIndex].key, params);
+        _storePositionSeed(lp, poolIndex, params, slot);
+    }
+
+    function _storePositionSeed(LpSeed memory lp, uint8 poolIndex, ModifyLiquidityParams memory params, uint8 slot) internal {
+        positionSeeds.push(
+            PositionSeed({
+                label: _positionLabel(lp.label, slot),
+                lp: lp.account,
+                poolIndex: poolIndex,
+                tickLower: params.tickLower,
+                tickUpper: params.tickUpper,
+                liquidityDelta: params.liquidityDelta,
+                salt: params.salt,
+                positionId: hook.getPositionId(
+                    lp.account, poolSeeds[poolIndex].key.toId(), params.tickLower, params.tickUpper, params.salt
+                )
+            })
+        );
+    }
+
+    function _positionLabel(string memory lpLabel, uint8 slot) internal view returns (string memory) {
+        return string(abi.encodePacked(lpLabel, "-p", vm.toString(uint256(slot + 1))));
+    }
+
+    function _seedSwaps() internal {
+        _pushSwap("tight buy pressure", swapActor, 0, false, 0.02 ether);
+        _pushSwap("standard sell pressure", swapActor, 2, true, 0.03 ether);
+        _pushSwap("wide buy pressure", swapActor, 3, false, 0.015 ether);
+        _pushSwap("mid-tight sell pressure", swapActor, 1, true, 0.025 ether);
+        _pushSwap("ultra-wide buy pressure", swapActor, 4, false, 0.018 ether);
+
+        for (uint256 i; i < swapSeeds.length; ++i) {
+            vm.startPrank(swapSeeds[i].trader);
+            swap(poolSeeds[swapSeeds[i].poolIndex].key, swapSeeds[i].zeroForOne, swapSeeds[i].amountSpecified, "");
+            vm.stopPrank();
+        }
+    }
+
+    function _pushSwap(string memory label, address trader, uint8 poolIndex, bool zeroForOne, int256 amountSpecified)
+        internal
+    {
+        swapSeeds.push(
+            SwapSeed({
+                label: label,
+                trader: trader,
+                poolIndex: poolIndex,
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified
+            })
+        );
+    }
+
+    function _modifyLiquidityAs(address lp, PoolKey memory key, ModifyLiquidityParams memory params) internal {
+        vm.startPrank(lp);
+        msgSenderLiquidityRouter.modifyLiquidity(key, params, "");
+        vm.stopPrank();
+    }
+
+    function _buildPoolKey(address tokenA, address tokenB, uint24 fee, int24 tickSpacing)
+        internal
+        view
+        returns (PoolKey memory)
+    {
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
 
         return PoolKey({
             currency0: Currency.wrap(token0),
             currency1: Currency.wrap(token1),
-            fee: 3000,
-            tickSpacing: 60,
+            fee: fee,
+            tickSpacing: tickSpacing,
             hooks: IHooks(address(hook))
         });
     }
 
-    function _prepareParticipant(address user, address token0, address token1) internal {
-        BaseTestToken(token0).mint(user, 1 << 120);
-        BaseTestToken(token1).mint(user, 1 << 120);
-
-        vm.startPrank(user);
-        BaseTestToken(token0).approve(address(swapRouter), type(uint256).max);
-        BaseTestToken(token1).approve(address(swapRouter), type(uint256).max);
-        BaseTestToken(token0).approve(address(msgSenderLiquidityRouter), type(uint256).max);
-        BaseTestToken(token1).approve(address(msgSenderLiquidityRouter), type(uint256).max);
-        vm.stopPrank();
+    function _anvilAccounts() internal pure returns (address[LP_COUNT] memory accounts) {
+        accounts[0] = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+        accounts[1] = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
+        accounts[2] = 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC;
+        accounts[3] = 0x90F79bf6EB2c4f870365E785982E1f101E93b906;
+        accounts[4] = 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65;
+        accounts[5] = 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc;
+        accounts[6] = 0x976EA74026E726554dB657fA54763abd0C3a0aa9;
+        accounts[7] = 0x14dC79964da2C08b23698B3D3cc7Ca32193d9955;
+        accounts[8] = 0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f;
+        accounts[9] = 0xa0Ee7A142d267C1f36714E4a8F75612F20a79720;
     }
 
-    function _newScenario(string memory name, string memory description, address tokenA, address tokenB)
-        internal
-        returns (ScenarioResult storage scenario, PoolKey memory key)
-    {
-        scenario = scenarioResults.push();
-        scenario.name = name;
-        scenario.description = description;
-
-        key = _buildPoolKey(tokenA, tokenB);
-        scenario.key = key;
-        scenario.token0 = Currency.unwrap(key.currency0);
-        scenario.token1 = Currency.unwrap(key.currency1);
+    function _tierBalanceForIndex(uint8 lpIndex) internal pure returns (uint256) {
+        if (lpIndex < 3) return LARGE_TIER_BALANCE;
+        if (lpIndex < 7) return MEDIUM_TIER_BALANCE;
+        return SMALL_TIER_BALANCE;
     }
 
-    function _trackLp(ScenarioResult storage scenario, address lp) internal {
-        for (uint256 i; i < scenario.lps.length; ++i) {
-            if (scenario.lps[i] == lp) return;
-        }
-
-        scenario.lps.push(lp);
+    function _tierNameForIndex(uint8 lpIndex) internal pure returns (string memory) {
+        if (lpIndex < 3) return "large";
+        if (lpIndex < 7) return "medium";
+        return "small";
     }
 
-    function _logAction(ScenarioResult storage scenario, string memory actionType, address actor, string memory details)
-        internal
-    {
-        scenario.actions.push(ActionEntry({actionType: actionType, actor: actor, details: details}));
+    function _poolIndexFor(uint8 lpIndex, uint8 slot, bool anchor) internal pure returns (uint8) {
+        if (anchor) return uint8((lpIndex + slot) % POOL_COUNT);
+        return uint8(((lpIndex * 2) + slot) % POOL_COUNT);
     }
 
-    function _trackPosition(
-        ScenarioResult storage scenario,
-        address lp,
-        PoolKey memory key,
-        ModifyLiquidityParams memory params
-    ) internal returns (bytes32 positionId) {
-        positionId = hook.getPositionId(lp, key.toId(), params.tickLower, params.tickUpper, params.salt);
-
-        for (uint256 i; i < scenario.positions.length; ++i) {
-            if (scenario.positions[i].positionId == positionId) return positionId;
-        }
-
-        scenario.positions.push(
-            PositionRef({
-                lp: lp,
-                positionId: positionId,
-                tickLower: params.tickLower,
-                tickUpper: params.tickUpper,
-                salt: params.salt
-            })
-        );
+    function _widthUnitsFor(uint8 lpIndex, uint8 slot, bool anchor) internal pure returns (int24) {
+        uint8[5] memory anchorWidths = [uint8(18), uint8(12), uint8(8), uint8(15), uint8(10)];
+        uint8[5] memory standardWidths = [uint8(12), uint8(8), uint8(6), uint8(10), uint8(5)];
+        return int24(uint24(anchor ? anchorWidths[(lpIndex + slot) % 5] : standardWidths[(lpIndex + slot) % 5]));
     }
 
-    function _initializeScenarioPool(ScenarioResult storage scenario, PoolKey memory key, int24 tick) internal {
-        manager.initialize(key, uint160(TickMath.getSqrtPriceAtTick(tick)));
-        _logAction(
-            scenario,
-            "initialize",
-            address(0),
-            string(abi.encodePacked("tick=", vm.toString(int256(tick))))
-        );
+    function _centerUnitsFor(uint8 lpIndex, uint8 slot, bool anchor) internal pure returns (int24) {
+        int24[5] memory anchorOffsets = [int24(0), int24(-1), int24(1), int24(0), int24(0)];
+        int24[5] memory standardOffsets = [int24(0), int24(-2), int24(2), int24(-1), int24(1)];
+        return anchor ? anchorOffsets[(lpIndex + slot) % 5] : standardOffsets[(lpIndex + slot) % 5];
     }
 
-    function _addLiquidity(
-        ScenarioResult storage scenario,
-        address lp,
-        PoolKey memory key,
-        ModifyLiquidityParams memory params,
-        string memory label
-    ) internal {
-        _trackLp(scenario, lp);
-        vm.startPrank(lp);
-        msgSenderLiquidityRouter.modifyLiquidity(key, params, "");
-        vm.stopPrank();
-
-        bytes32 positionId = _trackPosition(scenario, lp, key, params);
-        _logAction(
-            scenario,
-            "addLiquidity",
-            lp,
-            string(
-                abi.encodePacked(
-                    label,
-                    " positionId=",
-                    vm.toString(positionId),
-                    " range=[",
-                    vm.toString(int256(params.tickLower)),
-                    ",",
-                    vm.toString(int256(params.tickUpper)),
-                    "] liquidityDelta=",
-                    vm.toString(params.liquidityDelta)
-                )
-            )
-        );
-    }
-
-    function _removeLiquidity(
-        ScenarioResult storage scenario,
-        address lp,
-        PoolKey memory key,
-        ModifyLiquidityParams memory params,
-        string memory label
-    ) internal {
-        _trackLp(scenario, lp);
-        vm.startPrank(lp);
-        msgSenderLiquidityRouter.modifyLiquidity(key, params, "");
-        vm.stopPrank();
-
-        bytes32 positionId = _trackPosition(scenario, lp, key, params);
-        _logAction(
-            scenario,
-            "removeLiquidity",
-            lp,
-            string(
-                abi.encodePacked(
-                    label,
-                    " positionId=",
-                    vm.toString(positionId),
-                    " liquidityDelta=",
-                    vm.toString(params.liquidityDelta)
-                )
-            )
-        );
-    }
-
-    function _swapScenario(
-        ScenarioResult storage scenario,
-        address actor,
-        PoolKey memory key,
-        bool zeroForOne,
-        int256 amountSpecified,
-        string memory label
-    ) internal {
-        vm.startPrank(actor);
-        swap(key, zeroForOne, amountSpecified, "");
-        vm.stopPrank();
-
-        _logAction(
-            scenario,
-            "swap",
-            actor,
-            string(
-                abi.encodePacked(
-                    label,
-                    " zeroForOne=",
-                    _boolToString(zeroForOne),
-                    " amountSpecified=",
-                    vm.toString(amountSpecified)
-                )
-            )
-        );
+    function _liquidityFor(uint8 lpIndex, uint8 slot, bool anchor) internal pure returns (uint128) {
+        uint128 base = anchor ? uint128(4e18) : uint128(15e17);
+        uint128 tierBump = uint128(uint256(lpIndex < 3 ? 15e17 : lpIndex < 7 ? 8e17 : 3e17));
+        uint128 slotBump = uint128(uint256((uint256(slot % 4) + 1) * 2e17));
+        return base + tierBump + slotBump;
     }
 
     function _writeArtifact() internal returns (string memory path) {
@@ -295,6 +382,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         return string(
             abi.encodePacked(
                 "{",
+                '"format":"seed-v1",',
                 '"runTimestamp":',
                 vm.toString(block.timestamp),
                 ',',
@@ -304,8 +392,17 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 '"contracts":',
                 _contractsJson(),
                 ',',
-                '"scenarios":',
-                _scenariosJson(),
+                '"seedManifest":',
+                _seedManifestJson(),
+                ',',
+                '"market":',
+                _marketJson(),
+                ',',
+                '"pools":',
+                _poolsJson(),
+                ',',
+                '"positions":',
+                _positionsJson(),
                 "}"
             )
         );
@@ -338,125 +435,335 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         );
     }
 
-    function _scenariosJson() internal view returns (string memory) {
-        string memory scenariosJson = "[";
-
-        for (uint256 i; i < scenarioResults.length; ++i) {
-            if (i > 0) scenariosJson = string(abi.encodePacked(scenariosJson, ","));
-            scenariosJson = string(abi.encodePacked(scenariosJson, _scenarioJson(scenarioResults[i])));
-        }
-
-        return string(abi.encodePacked(scenariosJson, "]"));
-    }
-
-    function _scenarioJson(ScenarioResult storage scenario) internal view returns (string memory) {
+    function _seedManifestJson() internal view returns (string memory) {
         return string(
             abi.encodePacked(
                 "{",
-                '"name":"',
-                scenario.name,
-                '",',
-                '"description":"',
-                scenario.description,
-                '",',
-                '"pool":',
-                _poolJson(scenario),
+                '"description":"Deterministic seeded USD/ETH environment for local Squid demos.",',
+                '"poolCount":',
+                vm.toString(poolSeeds.length),
                 ',',
-                '"lpAddresses":',
-                _lpAddressesJson(scenario),
+                '"lpCount":',
+                vm.toString(lpSeeds.length),
                 ',',
-                '"actions":',
-                _actionsJson(scenario),
+                '"positionCount":',
+                vm.toString(positionSeeds.length),
                 ',',
-                '"finalState":',
-                _finalStateJson(scenario),
+                '"swapCount":',
+                vm.toString(swapSeeds.length),
+                ',',
+                '"lpRoster":',
+                _lpRosterJson(),
+                ',',
+                '"poolSeeds":',
+                _poolSeedManifestJson(),
+                ',',
+                '"positionSeeds":',
+                _positionSeedManifestJson(),
+                ',',
+                '"swapSeeds":',
+                _swapSeedManifestJson(),
                 "}"
             )
         );
     }
 
-    function _poolJson(ScenarioResult storage scenario) internal view returns (string memory) {
-        PoolId poolId = scenario.key.toId();
-
+    function _marketJson() internal view returns (string memory) {
         return string(
             abi.encodePacked(
                 "{",
-                '"poolId":"',
-                vm.toString(PoolId.unwrap(poolId)),
-                '",',
+                '"basePair":"USD/ETH",',
                 '"token0":"',
-                vm.toString(scenario.token0),
+                vm.toString(address(usdToken)),
                 '",',
                 '"token1":"',
-                vm.toString(scenario.token1),
+                vm.toString(address(ethToken)),
                 '",',
-                '"fee":',
-                vm.toString(scenario.key.fee),
-                ',',
-                '"tickSpacing":',
-                vm.toString(uint256(uint24(scenario.key.tickSpacing))),
-                ',',
-                '"hook":"',
-                vm.toString(address(scenario.key.hooks)),
-                '"',
+                '"token0Symbol":"USD",',
+                '"token1Symbol":"ETH"',
                 "}"
             )
         );
     }
 
-    function _lpAddressesJson(ScenarioResult storage scenario) internal view returns (string memory) {
-        string memory lpsJson = "[";
+    function _lpRosterJson() internal view returns (string memory) {
+        string memory rosterJson = "[";
 
-        for (uint256 i; i < scenario.lps.length; ++i) {
-            if (i > 0) lpsJson = string(abi.encodePacked(lpsJson, ","));
-            lpsJson = string(abi.encodePacked(lpsJson, '"', vm.toString(scenario.lps[i]), '"'));
+        for (uint256 i; i < lpSeeds.length; ++i) {
+            if (i > 0) rosterJson = string(abi.encodePacked(rosterJson, ","));
+            rosterJson = string(
+                abi.encodePacked(
+                    rosterJson,
+                    "{",
+                    '"account":"',
+                    vm.toString(lpSeeds[i].account),
+                    '",',
+                    '"label":"',
+                    lpSeeds[i].label,
+                    '",',
+                    '"tier":"',
+                    lpSeeds[i].tier,
+                    '",',
+                    '"anchor":',
+                    _boolToString(lpSeeds[i].anchor),
+                    ',',
+                    '"plannedPositions":',
+                    vm.toString(uint256(lpSeeds[i].plannedPositions)),
+                    ',',
+                    '"usdBalanceSeeded":',
+                    vm.toString(lpSeeds[i].usdBalanceSeeded),
+                    ',',
+                    '"ethBalanceSeeded":',
+                    vm.toString(lpSeeds[i].ethBalanceSeeded),
+                    "}"
+                )
+            );
         }
 
-        return string(abi.encodePacked(lpsJson, "]"));
+        return string(abi.encodePacked(rosterJson, "]"));
     }
 
-    function _actionsJson(ScenarioResult storage scenario) internal view returns (string memory) {
-        string memory actionsJson = "[";
+    function _poolSeedManifestJson() internal view returns (string memory) {
+        string memory poolsJson = "[";
 
-        for (uint256 i; i < scenario.actions.length; ++i) {
-            if (i > 0) actionsJson = string(abi.encodePacked(actionsJson, ","));
-            actionsJson = string(
+        for (uint256 i; i < poolSeeds.length; ++i) {
+            if (i > 0) poolsJson = string(abi.encodePacked(poolsJson, ","));
+            poolsJson = string(
                 abi.encodePacked(
-                    actionsJson,
+                    poolsJson,
                     "{",
-                    '"type":"',
-                    scenario.actions[i].actionType,
+                    '"index":',
+                    vm.toString(i),
+                    ',',
+                    '"label":"',
+                    poolSeeds[i].label,
                     '",',
-                    '"actor":"',
-                    vm.toString(scenario.actions[i].actor),
+                    '"poolId":"',
+                    vm.toString(poolSeeds[i].poolId),
                     '",',
-                    '"details":"',
-                    scenario.actions[i].details,
+                    '"fee":',
+                    vm.toString(poolSeeds[i].fee),
+                    ',',
+                    '"tickSpacing":',
+                    vm.toString(int256(poolSeeds[i].tickSpacing)),
+                    ',',
+                    '"initialTick":',
+                    vm.toString(int256(poolSeeds[i].initialTick)),
+                    "}"
+                )
+            );
+        }
+
+        return string(abi.encodePacked(poolsJson, "]"));
+    }
+
+    function _positionSeedManifestJson() internal view returns (string memory) {
+        string memory positionsJson = "[";
+
+        for (uint256 i; i < positionSeeds.length; ++i) {
+            if (i > 0) positionsJson = string(abi.encodePacked(positionsJson, ","));
+            positionsJson = string(
+                abi.encodePacked(
+                    positionsJson,
+                    "{",
+                    '"label":"',
+                    positionSeeds[i].label,
+                    '",',
+                    '"lp":"',
+                    vm.toString(positionSeeds[i].lp),
+                    '",',
+                    '"poolIndex":',
+                    vm.toString(uint256(positionSeeds[i].poolIndex)),
+                    ',',
+                    '"tickLower":',
+                    vm.toString(int256(positionSeeds[i].tickLower)),
+                    ',',
+                    '"tickUpper":',
+                    vm.toString(int256(positionSeeds[i].tickUpper)),
+                    ',',
+                    '"liquidityDelta":',
+                    vm.toString(positionSeeds[i].liquidityDelta),
+                    ',',
+                    '"salt":"',
+                    vm.toString(positionSeeds[i].salt),
+                    '",',
+                    '"positionId":"',
+                    vm.toString(positionSeeds[i].positionId),
                     '"',
                     "}"
                 )
             );
         }
 
-        return string(abi.encodePacked(actionsJson, "]"));
+        return string(abi.encodePacked(positionsJson, "]"));
     }
 
-    function _finalStateJson(ScenarioResult storage scenario) internal view returns (string memory) {
-        PoolId poolId = scenario.key.toId();
-        PoolSummary memory poolSummary = hook.getPoolSummary(poolId);
-        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = hook.getCurrentPoolState(poolId);
+    function _swapSeedManifestJson() internal view returns (string memory) {
+        string memory swapsJson = "[";
+
+        for (uint256 i; i < swapSeeds.length; ++i) {
+            if (i > 0) swapsJson = string(abi.encodePacked(swapsJson, ","));
+            swapsJson = string(
+                abi.encodePacked(
+                    swapsJson,
+                    "{",
+                    '"label":"',
+                    swapSeeds[i].label,
+                    '",',
+                    '"trader":"',
+                    vm.toString(swapSeeds[i].trader),
+                    '",',
+                    '"poolIndex":',
+                    vm.toString(uint256(swapSeeds[i].poolIndex)),
+                    ',',
+                    '"zeroForOne":',
+                    _boolToString(swapSeeds[i].zeroForOne),
+                    ',',
+                    '"amountSpecified":',
+                    vm.toString(swapSeeds[i].amountSpecified),
+                    "}"
+                )
+            );
+        }
+
+        return string(abi.encodePacked(swapsJson, "]"));
+    }
+
+    function _poolsJson() internal view returns (string memory) {
+        string memory poolsJson = "[";
+
+        for (uint256 i; i < poolSeeds.length; ++i) {
+            if (i > 0) poolsJson = string(abi.encodePacked(poolsJson, ","));
+            poolsJson = string(abi.encodePacked(poolsJson, _poolSnapshotJson(i)));
+        }
+
+        return string(abi.encodePacked(poolsJson, "]"));
+    }
+
+    function _poolSnapshotJson(uint256 poolIndex) internal view returns (string memory) {
+        PoolSeed storage pool = poolSeeds[poolIndex];
+        PoolSummary memory poolSummary = hook.getPoolSummary(pool.key.toId());
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = hook.getCurrentPoolState(pool.key.toId());
 
         return string(
             abi.encodePacked(
                 "{",
+                '"index":',
+                vm.toString(poolIndex),
+                ',',
+                '"label":"',
+                pool.label,
+                '",',
+                '"poolId":"',
+                vm.toString(pool.poolId),
+                '",',
+                '"config":',
+                _poolConfigJson(pool),
+                ',',
+                '"lpAddresses":',
+                _poolLpAddressesJson(poolIndex),
+                ',',
+                '"finalState":{',
                 '"poolSummary":',
                 _poolSummaryJson(poolSummary),
                 ',',
                 '"currentPoolState":',
                 _currentPoolStateJson(sqrtPriceX96, tick, protocolFee, lpFee),
+                '}',
+                "}"
+            )
+        );
+    }
+
+    function _poolConfigJson(PoolSeed storage pool) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                "{",
+                '"fee":',
+                vm.toString(pool.fee),
                 ',',
-                '"positions":',
-                _positionsJson(scenario),
+                '"tickSpacing":',
+                vm.toString(int256(pool.tickSpacing)),
+                ',',
+                '"initialTick":',
+                vm.toString(int256(pool.initialTick)),
+                ',',
+                '"hook":"',
+                vm.toString(address(pool.key.hooks)),
+                '"',
+                "}"
+            )
+        );
+    }
+
+    function _poolLpAddressesJson(uint256 poolIndex) internal view returns (string memory) {
+        string memory lpsJson = "[";
+        bool first = true;
+
+        for (uint256 i; i < lpSeeds.length; ++i) {
+            if (!_lpHasPoolPosition(lpSeeds[i].account, uint8(poolIndex))) continue;
+            if (!first) lpsJson = string(abi.encodePacked(lpsJson, ","));
+            lpsJson = string(abi.encodePacked(lpsJson, '"', vm.toString(lpSeeds[i].account), '"'));
+            first = false;
+        }
+
+        return string(abi.encodePacked(lpsJson, "]"));
+    }
+
+    function _positionsJson() internal view returns (string memory) {
+        string memory positionsJson = "[";
+
+        for (uint256 i; i < positionSeeds.length; ++i) {
+            if (i > 0) positionsJson = string(abi.encodePacked(positionsJson, ","));
+            positionsJson = string(abi.encodePacked(positionsJson, _positionSnapshotJson(positionSeeds[i])));
+        }
+
+        return string(abi.encodePacked(positionsJson, "]"));
+    }
+
+    function _positionSnapshotJson(PositionSeed storage position) internal view returns (string memory) {
+        PositionSummary memory summary = hook.getPositionSummary(position.positionId);
+        PositionLiquidity memory liquidity = hook.getPositionLiquidity(position.positionId);
+        PositionPnL memory pnl = hook.getPositionPnL(position.positionId);
+
+        return string(
+            abi.encodePacked(
+                "{",
+                '"label":"',
+                position.label,
+                '",',
+                '"lp":"',
+                vm.toString(position.lp),
+                '",',
+                '"poolIndex":',
+                vm.toString(uint256(position.poolIndex)),
+                ',',
+                '"poolLabel":"',
+                poolSeeds[position.poolIndex].label,
+                '",',
+                '"positionId":"',
+                vm.toString(position.positionId),
+                '",',
+                '"tickLower":',
+                vm.toString(int256(position.tickLower)),
+                ',',
+                '"tickUpper":',
+                vm.toString(int256(position.tickUpper)),
+                ',',
+                '"salt":"',
+                vm.toString(position.salt),
+                '",',
+                '"seedLiquidityDelta":',
+                vm.toString(position.liquidityDelta),
+                ',',
+                '"summary":',
+                _positionSummaryJson(summary),
+                ',',
+                '"liquidity":',
+                _positionLiquidityJson(liquidity),
+                ',',
+                '"pnl":',
+                _positionPnlJson(pnl),
                 "}"
             )
         );
@@ -494,13 +801,15 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 vm.toString(summary.fee),
                 ',',
                 '"tickSpacing":',
-                vm.toString(uint256(uint24(summary.tickSpacing))),
+                vm.toString(int256(summary.tickSpacing)),
                 ',',
                 '"initialSqrtPriceX96":',
                 vm.toString(summary.initialSqrtPriceX96),
                 ',',
                 '"liquidity":',
-                _poolLiquidityJson(summary.liquidity.totalLiquidity, summary.liquidity.activeLiquidity, summary.liquidity.peakActiveLiquidity),
+                _poolLiquidityJson(
+                    summary.liquidity.totalLiquidity, summary.liquidity.activeLiquidity, summary.liquidity.peakActiveLiquidity
+                ),
                 "}"
             )
         );
@@ -546,53 +855,6 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 ',',
                 '"lpFee":',
                 vm.toString(lpFee),
-                "}"
-            )
-        );
-    }
-
-    function _positionsJson(ScenarioResult storage scenario) internal view returns (string memory) {
-        string memory positionsJson = "[";
-
-        for (uint256 i; i < scenario.positions.length; ++i) {
-            if (i > 0) positionsJson = string(abi.encodePacked(positionsJson, ","));
-            positionsJson = string(abi.encodePacked(positionsJson, _positionSnapshotJson(scenario.positions[i])));
-        }
-
-        return string(abi.encodePacked(positionsJson, "]"));
-    }
-
-    function _positionSnapshotJson(PositionRef storage position) internal view returns (string memory) {
-        PositionSummary memory summary = hook.getPositionSummary(position.positionId);
-        PositionLiquidity memory liquidity = hook.getPositionLiquidity(position.positionId);
-        PositionPnL memory pnl = hook.getPositionPnL(position.positionId);
-
-        return string(
-            abi.encodePacked(
-                "{",
-                '"lp":"',
-                vm.toString(position.lp),
-                '",',
-                '"positionId":"',
-                vm.toString(position.positionId),
-                '",',
-                '"tickLower":',
-                vm.toString(int256(position.tickLower)),
-                ',',
-                '"tickUpper":',
-                vm.toString(int256(position.tickUpper)),
-                ',',
-                '"salt":"',
-                vm.toString(position.salt),
-                '",',
-                '"summary":',
-                _positionSummaryJson(summary),
-                ',',
-                '"liquidity":',
-                _positionLiquidityJson(liquidity),
-                ',',
-                '"pnl":',
-                _positionPnlJson(pnl),
                 "}"
             )
         );
@@ -714,22 +976,23 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         );
     }
 
-    function _boolToString(bool value) internal pure returns (string memory) {
-        return value ? "true" : "false";
+    function _lpHasPoolPosition(address lp, uint8 poolIndex) internal view returns (bool) {
+        for (uint256 i; i < positionSeeds.length; ++i) {
+            if (positionSeeds[i].lp == lp && positionSeeds[i].poolIndex == poolIndex) return true;
+        }
+        return false;
     }
 
-    function _deployScenarioTokens(string memory tokenAName, string memory tokenASymbol, string memory tokenBName, string memory tokenBSymbol)
-        internal
-        returns (TestToken tokenA, TestToken tokenB)
-    {
-        tokenA = new TestToken(tokenAName, tokenASymbol);
-        tokenB = new TestToken(tokenBName, tokenBSymbol);
+    function _boolToString(bool value) internal pure returns (string memory) {
+        return value ? "true" : "false";
     }
 
     function _printSummary(string memory artifactPath) internal view {
         console2.log("Squid simulation artifact:", artifactPath);
         console2.log("PoolManager:", address(manager));
         console2.log("Squid:", address(hook));
-        console2.log("Tracked scenarios:", scenarioResults.length);
+        console2.log("Seeded pools:", poolSeeds.length);
+        console2.log("Seeded LPs:", lpSeeds.length);
+        console2.log("Seeded positions:", positionSeeds.length);
     }
 }
