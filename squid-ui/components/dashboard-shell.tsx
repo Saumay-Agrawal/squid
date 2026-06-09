@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/wallet/theme-toggle";
 import type { SquidDashboardData } from "@/lib/dashboard";
-import { cn, formatSignedAmount } from "@/lib/utils";
+import { cn, formatSignedAmountParts } from "@/lib/utils";
 
 type Section = "pools" | "lps" | "profile";
 
@@ -168,12 +168,14 @@ function SidebarContext({
   profile: SquidDashboardData["lpSummaries"][number] | null;
   data: SquidDashboardData;
 }) {
+  const profilePnlParts = profile ? formatSignedAmountParts(profile.totalPnl) : null;
   const config =
     section === "pools"
       ? {
           title: "Pools view",
           note: `${data.market.basePair} across ${data.seedManifest.positionCount} seeded positions.`,
           value: `${data.seedManifest.poolCount} pools`,
+          detail: null,
           positive: undefined,
         }
       : section === "lps"
@@ -181,12 +183,14 @@ function SidebarContext({
             title: "LP roster",
             note: `${data.seedManifest.swapCount} seeded swaps across ${data.seedManifest.lpCount} wallets.`,
             value: `${data.seedManifest.lpCount} wallets`,
+            detail: null,
             positive: undefined,
           }
         : {
             title: "Selected wallet",
             note: profile ? `${profile.activePositionCount} active positions across ${profile.poolCount} pools.` : "Choose a wallet to load a profile summary.",
-            value: profile ? formatSignedAmount(profile.totalPnl) : "No wallet",
+            value: profilePnlParts?.primary ?? "No wallet",
+            detail: profilePnlParts?.secondary ?? null,
             positive: profile ? profile.totalPnl >= 0n : undefined,
           };
 
@@ -201,6 +205,7 @@ function SidebarContext({
       >
         {config.value}
       </div>
+      {config.detail ? <div className="mt-1 text-sm text-muted-foreground">{config.detail}</div> : null}
       <div className="mt-2 text-sm text-muted-foreground">{config.note}</div>
       <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">
         <div className="flex items-center justify-between gap-3">

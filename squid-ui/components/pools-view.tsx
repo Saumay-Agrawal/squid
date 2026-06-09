@@ -7,20 +7,21 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { PoolSummary } from "@/lib/dashboard";
-import { cn, formatAmount, formatFeeTier, formatTick, shortenHash } from "@/lib/utils";
+import { cn, formatAmount, formatAmountParts, formatFeeTier, formatTick, shortenHash } from "@/lib/utils";
 
 export function PoolsView({ pools }: { pools: PoolSummary[] }) {
   const [expandedPoolId, setExpandedPoolId] = useState<string | null>(pools[0]?.poolId ?? null);
   const totalLiquidity = pools.reduce((sum, pool) => sum + pool.totalLiquidity, 0n);
   const activePools = pools.filter((pool) => pool.activeLiquidity > 0n).length;
   const totalLps = pools.reduce((sum, pool) => sum + pool.lpCount, 0);
+  const totalLiquidityParts = formatAmountParts(totalLiquidity);
 
   return (
     <div className="space-y-5">
       <section className="grid gap-4 md:grid-cols-3">
         <MetricCard title="Pools to review" value={String(pools.length)} note="Each seeded fee tier contributes one pool snapshot" icon={Layers3} />
         <MetricCard title="Pools in range" value={String(activePools)} note="Pools with active liquidity right now" icon={Activity} />
-        <MetricCard title="Tracked liquidity" value={formatAmount(totalLiquidity)} note={`${totalLps} LP presences across pools`} icon={Droplets} />
+        <MetricCard title="Tracked liquidity" value={totalLiquidityParts.primary} detail={totalLiquidityParts.secondary} note={`${totalLps} LP presences across pools`} icon={Droplets} />
       </section>
 
       <Card className="overflow-hidden">
@@ -47,6 +48,9 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                 {pools.map((pool) => {
                   const isExpanded = expandedPoolId === pool.poolId;
                   const detailId = `pool-detail-${pool.poolId}`;
+                  const activeLiquidityParts = formatAmountParts(pool.activeLiquidity);
+                  const peakActiveLiquidityParts = formatAmountParts(pool.peakActiveLiquidity);
+                  const totalLiquidityParts = formatAmountParts(pool.totalLiquidity);
 
                   return (
                     <Fragment key={pool.poolId}>
@@ -62,12 +66,12 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                         <TableCell>{pool.tickSpacing}</TableCell>
                         <TableCell>
                           <MetricStack
-                            primary={formatAmount(pool.activeLiquidity)}
-                            secondary={`peak ${formatAmount(pool.peakActiveLiquidity)}`}
+                            primary={activeLiquidityParts.primary}
+                            secondary={`peak ${peakActiveLiquidityParts.primary}`}
                             emphasize={pool.activeLiquidity > 0n}
                           />
                         </TableCell>
-                        <TableCell>{formatAmount(pool.totalLiquidity)}</TableCell>
+                        <TableCell>{totalLiquidityParts.primary}</TableCell>
                         <TableCell>{pool.lpCount}</TableCell>
                         <TableCell>
                           <MetricStack primary={String(pool.positionCount)} secondary={`${pool.activePositionCount} active`} />
@@ -101,8 +105,8 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                                   <StatLine label="Current tick" value={formatTick(pool.tick)} />
                                   <StatLine label="Fee tier" value={formatFeeTier(pool.fee)} />
                                   <StatLine label="Tick spacing" value={String(pool.tickSpacing)} />
-                                  <StatLine label="Active liquidity" value={formatAmount(pool.activeLiquidity)} />
-                                  <StatLine label="Peak active liquidity" value={formatAmount(pool.peakActiveLiquidity)} />
+                                  <StatLine label="Active liquidity" value={activeLiquidityParts.primary} detail={activeLiquidityParts.secondary} />
+                                  <StatLine label="Peak active liquidity" value={peakActiveLiquidityParts.primary} detail={peakActiveLiquidityParts.secondary} />
                                 </div>
                                 <div className="mt-4 text-sm text-muted-foreground">
                                   <div className="mb-2 flex items-center gap-2 text-foreground">
@@ -110,7 +114,8 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                                     Readout
                                   </div>
                                   <p>
-                                    {pool.lpCount} LPs supply {formatAmount(pool.totalLiquidity)} total liquidity across {pool.positionCount} positions.{" "}
+                                    {pool.lpCount} LPs supply {totalLiquidityParts.primary}
+                                    {totalLiquidityParts.secondary ? ` (${totalLiquidityParts.secondary})` : ""} total liquidity across {pool.positionCount} positions.{" "}
                                     {pool.activePositionCount} positions are live at the current tick.
                                   </p>
                                 </div>
@@ -134,11 +139,13 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
 function MetricCard({
   title,
   value,
+  detail,
   note,
   icon: Icon,
 }: {
   title: string;
   value: string;
+  detail?: string | null;
   note: string;
   icon: React.ComponentType<{ className?: string }>;
 }) {
@@ -148,6 +155,7 @@ function MetricCard({
         <div>
           <CardDescription className="uppercase tracking-[0.14em]">{title}</CardDescription>
           <CardTitle className="mt-2 text-2xl tracking-[-0.03em]">{value}</CardTitle>
+          {detail ? <div className="mt-1 text-sm text-muted-foreground">{detail}</div> : null}
         </div>
         <div className="rounded-2xl bg-primary/10 p-3 text-primary">
           <Icon className="h-4 w-4" />
@@ -158,11 +166,14 @@ function MetricCard({
   );
 }
 
-function StatLine({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function StatLine({ label, value, detail, mono = false }: { label: string; value: string; detail?: string | null; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/70 px-3 py-3">
       <span className="text-muted-foreground">{label}</span>
-      <span className={mono ? "font-mono text-xs" : "font-medium"}>{value}</span>
+      <div className="text-right">
+        <div className={mono ? "font-mono text-xs" : "font-medium"}>{value}</div>
+        {detail ? <div className="text-xs text-muted-foreground">{detail}</div> : null}
+      </div>
     </div>
   );
 }

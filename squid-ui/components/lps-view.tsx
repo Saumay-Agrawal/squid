@@ -7,20 +7,22 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { LpSummary } from "@/lib/dashboard";
-import { cn, formatAmount, formatFeeTier, formatSignedAmount, shortenAddress, shortenHash, startCase } from "@/lib/utils";
+import { cn, formatAmount, formatAmountParts, formatFeeTier, formatSignedAmount, formatSignedAmountParts, shortenAddress, shortenHash, startCase } from "@/lib/utils";
 
 export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAddress: string }) {
   const [expandedAddress, setExpandedAddress] = useState<string | null>(selectedAddress || (lps[0]?.address ?? null));
   const activeWallets = lps.filter((lp) => lp.activePositionCount > 0).length;
   const totalLiquidity = lps.reduce((sum, lp) => sum + lp.totalLiquidity, 0n);
   const totalPnl = lps.reduce((sum, lp) => sum + lp.totalPnl, 0n);
+  const totalLiquidityParts = formatAmountParts(totalLiquidity);
+  const totalPnlParts = formatSignedAmountParts(totalPnl);
 
   return (
     <div className="space-y-4">
       <section className="grid gap-4 md:grid-cols-3">
         <MetricCard title="Tracked wallets" value={String(lps.length)} note={`${activeWallets} wallets currently have active positions`} />
-        <MetricCard title="Aggregate liquidity" value={formatAmount(totalLiquidity)} note="Combined liquidity across every tracked LP snapshot" />
-        <MetricCard title="Aggregate PnL" value={formatSignedAmount(totalPnl)} note="Net outcome across all tracked LPs" positive={totalPnl >= 0n} />
+        <MetricCard title="Aggregate liquidity" value={totalLiquidityParts.primary} detail={totalLiquidityParts.secondary} note="Combined liquidity across every tracked LP snapshot" />
+        <MetricCard title="Aggregate PnL" value={totalPnlParts.primary} detail={totalPnlParts.secondary} note="Net outcome across all tracked LPs" positive={totalPnl >= 0n} />
       </section>
 
       <Card className="overflow-hidden">
@@ -48,6 +50,11 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
                   const isExpanded = expandedAddress === lp.address;
                   const isSelected = lp.address === selectedAddress;
                   const detailId = `lp-detail-${lp.address}`;
+                  const liquidityParts = formatAmountParts(lp.totalLiquidity);
+                  const feeParts = formatAmountParts(lp.totalFees);
+                  const pnlParts = formatSignedAmountParts(lp.totalPnl);
+                  const seededUsdParts = lp.seededUsdBalance === null ? null : formatAmountParts(lp.seededUsdBalance);
+                  const seededEthParts = lp.seededEthBalance === null ? null : formatAmountParts(lp.seededEthBalance);
 
                   return (
                     <Fragment key={lp.address}>
@@ -110,14 +117,14 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
                                 <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
                                   <StatLine label="Positions" value={String(lp.positionCount)} />
                                   <StatLine label="Planned" value={lp.plannedPositions === null ? "N/A" : String(lp.plannedPositions)} />
-                                  <StatLine label="Liquidity" value={formatAmount(lp.totalLiquidity)} />
-                                  <StatLine label="Fees" value={formatAmount(lp.totalFees)} />
-                                  <StatLine label="Net PnL" value={formatSignedAmount(lp.totalPnl)} positive={lp.totalPnl >= 0n} />
+                                  <StatLine label="Liquidity" value={liquidityParts.primary} detail={liquidityParts.secondary} />
+                                  <StatLine label="Fees" value={feeParts.primary} detail={feeParts.secondary} />
+                                  <StatLine label="Net PnL" value={pnlParts.primary} detail={pnlParts.secondary} positive={lp.totalPnl >= 0n} />
                                 </div>
 
                                 <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                                  <StatLine label="Seeded USD" value={lp.seededUsdBalance === null ? "N/A" : formatAmount(lp.seededUsdBalance)} />
-                                  <StatLine label="Seeded ETH" value={lp.seededEthBalance === null ? "N/A" : formatAmount(lp.seededEthBalance)} />
+                                  <StatLine label="Seeded USD" value={seededUsdParts?.primary ?? "N/A"} detail={seededUsdParts?.secondary ?? null} />
+                                  <StatLine label="Seeded ETH" value={seededEthParts?.primary ?? "N/A"} detail={seededEthParts?.secondary ?? null} />
                                 </div>
 
                                 <div className="mt-5">
@@ -143,18 +150,23 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
 function StatLine({
   label,
   value,
+  detail,
   positive,
 }: {
   label: string;
   value: string;
+  detail?: string | null;
   positive?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/70 px-3 py-3">
       <span className="text-muted-foreground">{label}</span>
-      <span className={positive === undefined ? "font-medium" : positive ? "font-medium text-emerald-600 dark:text-emerald-400" : "font-medium text-rose-600 dark:text-rose-400"}>
-        {value}
-      </span>
+      <div className="text-right">
+        <div className={positive === undefined ? "font-medium" : positive ? "font-medium text-emerald-600 dark:text-emerald-400" : "font-medium text-rose-600 dark:text-rose-400"}>
+          {value}
+        </div>
+        {detail ? <div className="text-xs text-muted-foreground">{detail}</div> : null}
+      </div>
     </div>
   );
 }
@@ -162,11 +174,13 @@ function StatLine({
 function MetricCard({
   title,
   value,
+  detail,
   note,
   positive,
 }: {
   title: string;
   value: string;
+  detail?: string | null;
   note: string;
   positive?: boolean;
 }) {
@@ -182,6 +196,7 @@ function MetricCard({
         >
           {value}
         </CardTitle>
+        {detail ? <div className="text-sm text-muted-foreground">{detail}</div> : null}
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">{note}</CardContent>
     </Card>
@@ -223,6 +238,9 @@ function GroupPositionsView({
       {positions.map((position) => {
         const isExpanded = expandedPositionId === position.positionId;
         const detailId = `${groupKey}-${position.positionId}`;
+        const activeLiquidityParts = formatAmountParts(position.activeLiquidity);
+        const totalLiquidityParts = formatAmountParts(position.liquidity);
+        const feeParts = formatAmountParts(position.fees);
 
         return (
           <div key={position.positionId} className="overflow-hidden rounded-2xl border border-border/60 bg-card/75">
@@ -267,11 +285,11 @@ function GroupPositionsView({
                 <div className="grid gap-3 text-sm sm:grid-cols-3">
                   <StatLine label="Position ID" value={shortenHash(position.positionId)} />
                   <StatLine label="Range width" value={String(position.tickUpper - position.tickLower)} />
-                  <StatLine label="Active liquidity" value={formatAmount(position.activeLiquidity)} />
+                  <StatLine label="Active liquidity" value={activeLiquidityParts.primary} detail={activeLiquidityParts.secondary} />
                 </div>
                 <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                  <StatLine label="Total liquidity" value={formatAmount(position.liquidity)} />
-                  <StatLine label="Fees accrued" value={formatAmount(position.fees)} />
+                  <StatLine label="Total liquidity" value={totalLiquidityParts.primary} detail={totalLiquidityParts.secondary} />
+                  <StatLine label="Fees accrued" value={feeParts.primary} detail={feeParts.secondary} />
                 </div>
               </div>
             ) : null}
@@ -296,6 +314,9 @@ function LpGroupsView({
       {groups.map((group) => {
         const isExpanded = expandedPoolId === group.poolId;
         const detailId = `${lpAddress}-${group.poolId}`;
+        const liquidityParts = formatAmountParts(group.totalLiquidity);
+        const feeParts = formatAmountParts(group.totalFees);
+        const pnlParts = formatSignedAmountParts(group.totalPnl);
 
         return (
           <div key={group.poolId} className="overflow-hidden rounded-3xl border border-border/70 bg-background/65">
@@ -306,15 +327,15 @@ function LpGroupsView({
               </div>
               <div>
                 <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Liquidity</div>
-                <div className="mt-1 font-medium">{formatAmount(group.totalLiquidity)}</div>
+                <div className="mt-1 font-medium">{liquidityParts.primary}</div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Fees</div>
-                <div className="mt-1 font-medium">{formatAmount(group.totalFees)}</div>
+                <div className="mt-1 font-medium">{feeParts.primary}</div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">PnL</div>
-                <PnlValue value={formatSignedAmount(group.totalPnl)} positive={group.totalPnl >= 0n} className="mt-1 font-medium" />
+                <PnlValue value={pnlParts.primary} positive={group.totalPnl >= 0n} className="mt-1 font-medium" />
               </div>
               <div>
                 <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Positions</div>
@@ -338,9 +359,9 @@ function LpGroupsView({
             {isExpanded ? (
               <div id={detailId} className="border-t border-border/60 bg-background/55 px-4 py-4">
                 <div className="grid gap-3 text-sm sm:grid-cols-3">
-                  <StatLine label="Liquidity" value={formatAmount(group.totalLiquidity)} />
-                  <StatLine label="Fees" value={formatAmount(group.totalFees)} />
-                  <StatLine label="PnL" value={formatSignedAmount(group.totalPnl)} positive={group.totalPnl >= 0n} />
+                  <StatLine label="Liquidity" value={liquidityParts.primary} detail={liquidityParts.secondary} />
+                  <StatLine label="Fees" value={feeParts.primary} detail={feeParts.secondary} />
+                  <StatLine label="PnL" value={pnlParts.primary} detail={pnlParts.secondary} positive={group.totalPnl >= 0n} />
                 </div>
                 <div className="mt-4">
                   <GroupPositionsView positions={group.positions} groupKey={`${lpAddress}-${group.poolId}`} />

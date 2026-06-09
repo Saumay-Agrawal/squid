@@ -5,6 +5,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
@@ -62,12 +63,32 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         override
         returns (bytes4, int128)
     {
-        _recordPoolSwap(key);
+        _recordPoolSwap(key, params);
         _recordPositionSwap(key, params, delta);
         return (IHooks.afterSwap.selector, 0);
     }
 
     function _poolManager() internal view override(SquidPoolMetrics, SquidPositionMetrics) returns (IPoolManager) {
         return poolManager;
+    }
+
+    function _recordPoolLpPositionLiquidityChange(
+        PoolId poolId,
+        address owner,
+        uint128 liquidityBefore,
+        uint128 liquidityAfter
+    ) internal override(SquidPoolMetrics, SquidPositionMetrics) {
+        SquidPoolMetrics._recordPoolLpPositionLiquidityChange(poolId, owner, liquidityBefore, liquidityAfter);
+    }
+
+    function _recordPoolPositionCreated(PoolId poolId) internal override(SquidPoolMetrics, SquidPositionMetrics) {
+        SquidPoolMetrics._recordPoolPositionCreated(poolId);
+    }
+
+    function _recordPoolPositionActivityChange(PoolId poolId, bool wasActive, bool isActive)
+        internal
+        override(SquidPoolMetrics, SquidPositionMetrics)
+    {
+        SquidPoolMetrics._recordPoolPositionActivityChange(poolId, wasActive, isActive);
     }
 }

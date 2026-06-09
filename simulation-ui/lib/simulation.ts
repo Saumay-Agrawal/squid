@@ -21,6 +21,9 @@ type ArtifactScenario = {
         totalLiquidity: number | string;
         activeLiquidity: number | string;
         peakActiveLiquidity: number | string;
+        totalLiquidityAtPeakActive: number | string;
+        liquidityUtilisationBps: number;
+        peakLiquidityUtilisationBps: number;
       };
     };
     currentPoolState: {
@@ -57,6 +60,9 @@ export type PoolRow = {
   totalLiquidity: bigint;
   activeLiquidity: bigint;
   peakActiveLiquidity: bigint;
+  totalLiquidityAtPeakActive: bigint;
+  liquidityUtilisationBps: number;
+  peakLiquidityUtilisationBps: number;
   lpCount: number;
   actionCount: number;
 };
@@ -97,6 +103,9 @@ export function loadSimulationDashboard(): DashboardData {
     totalLiquidity: toBigInt(scenario.finalState.poolSummary.liquidity.totalLiquidity),
     activeLiquidity: toBigInt(scenario.finalState.poolSummary.liquidity.activeLiquidity),
     peakActiveLiquidity: toBigInt(scenario.finalState.poolSummary.liquidity.peakActiveLiquidity),
+    totalLiquidityAtPeakActive: toBigInt(scenario.finalState.poolSummary.liquidity.totalLiquidityAtPeakActive),
+    liquidityUtilisationBps: scenario.finalState.poolSummary.liquidity.liquidityUtilisationBps,
+    peakLiquidityUtilisationBps: scenario.finalState.poolSummary.liquidity.peakLiquidityUtilisationBps,
     lpCount: scenario.lpAddresses.length,
     actionCount: scenario.actions.length,
   }));

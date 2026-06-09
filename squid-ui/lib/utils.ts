@@ -1,6 +1,25 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+const READABLE_AMOUNT_THRESHOLD = 1_000_000n;
+const READABLE_SCALES = [
+  { threshold: 1_000_000_000_000_000_000_000_000_000_000_000n, label: "decillion" },
+  { threshold: 1_000_000_000_000_000_000_000_000_000_000n, label: "nonillion" },
+  { threshold: 1_000_000_000_000_000_000_000_000_000n, label: "octillion" },
+  { threshold: 1_000_000_000_000_000_000_000_000n, label: "septillion" },
+  { threshold: 1_000_000_000_000_000_000_000n, label: "sextillion" },
+  { threshold: 1_000_000_000_000_000_000n, label: "quintillion" },
+  { threshold: 1_000_000_000_000_000n, label: "quadrillion" },
+  { threshold: 1_000_000_000_000n, label: "trillion" },
+  { threshold: 1_000_000_000n, label: "billion" },
+  { threshold: 1_000_000n, label: "million" },
+] as const;
+
+export type FormattedAmountParts = {
+  primary: string;
+  secondary: string | null;
+};
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -23,33 +42,34 @@ export function formatFeeTier(value: number) {
 }
 
 export function formatAmount(value: bigint) {
-  const negative = value < 0n;
-  const absolute = negative ? -value : value;
-  const text = absolute.toString();
-
-  if (text.length <= 6) return `${negative ? "-" : ""}${text}`;
-
-  const units = [
-    { threshold: 1_000_000_000_000n, suffix: "T" },
-    { threshold: 1_000_000_000n, suffix: "B" },
-    { threshold: 1_000_000n, suffix: "M" },
-    { threshold: 1_000n, suffix: "K" },
-  ];
-
-  for (const unit of units) {
-    if (absolute >= unit.threshold) {
-      const whole = absolute / unit.threshold;
-      const fraction = (absolute % unit.threshold) / (unit.threshold / 10n);
-      return `${negative ? "-" : ""}${whole.toString()}.${fraction.toString()}${unit.suffix}`;
-    }
-  }
-
-  return `${negative ? "-" : ""}${text}`;
+  return value.toLocaleString("en-US");
 }
 
 export function formatSignedAmount(value: bigint) {
   if (value === 0n) return "0";
-  return `${value > 0n ? "+" : "-"}${formatAmount(value > 0n ? value : -value)}`;
+  return value > 0n ? `+${formatAmount(value)}` : formatAmount(value);
+}
+
+export function formatReadableAmount(value: bigint) {
+  return formatReadableScale(value, false);
+}
+
+export function formatSignedReadableAmount(value: bigint) {
+  return formatReadableScale(value, true);
+}
+
+export function formatAmountParts(value: bigint): FormattedAmountParts {
+  return {
+    primary: formatAmount(value),
+    secondary: formatReadableAmount(value),
+  };
+}
+
+export function formatSignedAmountParts(value: bigint): FormattedAmountParts {
+  return {
+    primary: formatSignedAmount(value),
+    secondary: formatSignedReadableAmount(value),
+  };
 }
 
 export function startCase(value: string) {
@@ -58,4 +78,27 @@ export function startCase(value: string) {
     .filter(Boolean)
     .map((segment) => `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`)
     .join(" ");
+}
+
+function formatReadableScale(value: bigint, signed: boolean) {
+  const negative = value < 0n;
+  const absolute = negative ? -value : value;
+
+  if (absolute < READABLE_AMOUNT_THRESHOLD) {
+    return null;
+  }
+
+  const scale = READABLE_SCALES.find((candidate) => absolute >= candidate.threshold);
+
+  if (!scale) {
+    return null;
+  }
+
+  const whole = absolute / scale.threshold;
+  const fraction = ((absolute % scale.threshold) * 1_000n) / scale.threshold;
+  const fractionText = fraction.toString().padStart(3, "0").replace(/0+$/, "");
+  const magnitude = fractionText ? `${whole.toString()}.${fractionText}` : whole.toString();
+  const sign = negative ? "-" : signed && value > 0n ? "+" : "";
+
+  return `${sign}${magnitude} ${scale.label}`;
 }

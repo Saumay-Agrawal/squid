@@ -5,6 +5,28 @@ struct PoolLiquidity {
     uint128 totalLiquidity;
     uint128 activeLiquidity;
     uint128 peakActiveLiquidity;
+    uint128 totalLiquidityAtPeakActive;
+    uint32 liquidityUtilisationBps;
+    uint32 peakLiquidityUtilisationBps;
+}
+
+struct PoolLPs {
+    uint32 activeLpCount;
+    uint32 lifetimeLpCount;
+    uint32 lpRetentionBps;
+}
+
+struct PoolPositions {
+    uint32 activePositionCount;
+    uint32 totalPositionCount;
+    uint32 activePositionPercentageBps;
+}
+
+struct PoolTradeFlow {
+    uint32 totalSwapCount;
+    uint32 zeroToOneSwapCount;
+    uint32 oneToZeroSwapCount;
+    uint32 flowSkewnessBps;
 }
 
 struct PoolSummary {
@@ -20,4 +42,7 @@ struct PoolSummary {
     int24 tickSpacing;
     uint160 initialSqrtPriceX96;
     PoolLiquidity liquidity;
+    PoolLPs lps;
+    PoolPositions positions;
+    PoolTradeFlow tradeFlow;
 }

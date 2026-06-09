@@ -59,11 +59,24 @@ abstract contract SquidPositionMetrics {
         ModifyLiquidityParams calldata params,
         BalanceDelta delta,
         BalanceDelta feesAccrued
-    )
-        internal
-    {
+    ) internal {
         bytes32 positionId = _syncPositionSummary(sender, key, params);
-        _syncPositionLiquidity(positionSummariesById[positionId]);
+        PositionSummary storage summary = positionSummariesById[positionId];
+        uint128 liquidityBefore = positionLiquiditiesById[positionId].totalLiquidity;
+        uint128 activeLiquidityBefore = positionLiquiditiesById[positionId].activeLiquidity;
+
+        _syncPositionLiquidity(summary);
+        _recordPoolLpPositionLiquidityChange(
+            PoolId.wrap(summary.poolId),
+            summary.owner,
+            liquidityBefore,
+            positionLiquiditiesById[positionId].totalLiquidity
+        );
+        _recordPoolPositionActivityChange(
+            PoolId.wrap(summary.poolId),
+            activeLiquidityBefore > 0,
+            positionLiquiditiesById[positionId].activeLiquidity > 0
+        );
         PositionPnLState storage pnlState = positionPnLStatesById[positionId];
 
         _recordRealizedFees(pnlState, feesAccrued);
@@ -76,21 +89,29 @@ abstract contract SquidPositionMetrics {
         ModifyLiquidityParams calldata params,
         BalanceDelta,
         BalanceDelta feesAccrued
-    )
-        internal
-    {
+    ) internal {
         PoolId poolId = key.toId();
         address owner = _resolvePositionOwner(sender);
         bytes32 positionId = getPositionId(owner, poolId, params.tickLower, params.tickUpper, params.salt);
+        uint128 liquidityBeforePosition = positionLiquiditiesById[positionId].totalLiquidity;
+        uint128 activeLiquidityBefore = positionLiquiditiesById[positionId].activeLiquidity;
         PositionPnLState storage pnlState = positionPnLStatesById[positionId];
 
-        uint128 liquidityAfter = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(sender, params));
+        uint128 liquidityAfter =
+            StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(sender, params));
         uint128 liquidityRemoved = _absoluteLiquidityDelta(params.liquidityDelta);
         uint128 liquidityBefore = liquidityAfter + liquidityRemoved;
 
         _recordPrincipalDecrease(pnlState, liquidityBefore, liquidityRemoved);
         _recordRealizedFees(pnlState, feesAccrued);
-        _syncPositionLiquidity(positionSummariesById[positionId]);
+        PositionSummary storage summary = positionSummariesById[positionId];
+        _syncPositionLiquidity(summary);
+        _recordPoolLpPositionLiquidityChange(
+            poolId, owner, liquidityBeforePosition, positionLiquiditiesById[positionId].totalLiquidity
+        );
+        _recordPoolPositionActivityChange(
+            poolId, activeLiquidityBefore > 0, positionLiquiditiesById[positionId].activeLiquidity > 0
+        );
         _syncPositionSummary(sender, key, params);
     }
 
@@ -104,8 +125,10 @@ abstract contract SquidPositionMetrics {
             bytes32 positionId = positionIds[i];
             PositionSummary storage summary = positionSummariesById[positionId];
             PositionLiquidity storage liquidity = positionLiquiditiesById[positionId];
+            uint128 activeLiquidityBefore = liquidity.activeLiquidity;
 
             _syncPositionLiquidity(summary);
+            _recordPoolPositionActivityChange(poolId, activeLiquidityBefore > 0, liquidity.activeLiquidity > 0);
 
             if (liquidity.totalLiquidity == 0) continue;
 
@@ -140,6 +163,7 @@ abstract contract SquidPositionMetrics {
             summary.tickUpper = params.tickUpper;
             summary.salt = params.salt;
             trackedPositionIdsByPool[poolId].push(positionId);
+            _recordPoolPositionCreated(poolId);
         }
 
         summary.updatedBlock = uint64(block.number);
@@ -179,9 +203,10 @@ abstract contract SquidPositionMetrics {
         uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(summary.tickLower);
         uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(summary.tickUpper);
 
-        return PositionLiquidityAmounts.getAmountsForLiquidity(
-            sqrtPriceX96, sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity
-        );
+        return
+            PositionLiquidityAmounts.getAmountsForLiquidity(
+                sqrtPriceX96, sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity
+            );
     }
 
     function _getUncollectedFees(PositionSummary storage summary) internal view returns (uint256 fee0, uint256 fee1) {
@@ -207,9 +232,11 @@ abstract contract SquidPositionMetrics {
         pnlState.principalAmount1 += _negativeAmount1(principalDelta);
     }
 
-    function _recordPrincipalDecrease(PositionPnLState storage pnlState, uint128 liquidityBefore, uint128 liquidityRemoved)
-        internal
-    {
+    function _recordPrincipalDecrease(
+        PositionPnLState storage pnlState,
+        uint128 liquidityBefore,
+        uint128 liquidityRemoved
+    ) internal {
         if (liquidityRemoved == 0 || liquidityBefore == 0) return;
 
         if (liquidityRemoved >= liquidityBefore) {
@@ -240,7 +267,11 @@ abstract contract SquidPositionMetrics {
         return StateLibrary.getPositionInfo(_poolManager(), poolId, _corePositionId(summary));
     }
 
-    function _getPositionLiquidity(PoolId poolId, PositionSummary storage summary) internal view returns (uint128 liquidity) {
+    function _getPositionLiquidity(PoolId poolId, PositionSummary storage summary)
+        internal
+        view
+        returns (uint128 liquidity)
+    {
         liquidity = StateLibrary.getPositionLiquidity(_poolManager(), poolId, _corePositionId(summary));
     }
 
@@ -307,6 +338,17 @@ abstract contract SquidPositionMetrics {
     function _signedDiff(uint256 lhs, uint256 rhs) internal pure returns (int256) {
         return lhs >= rhs ? int256(lhs - rhs) : -int256(rhs - lhs);
     }
+
+    function _recordPoolLpPositionLiquidityChange(
+        PoolId poolId,
+        address owner,
+        uint128 liquidityBefore,
+        uint128 liquidityAfter
+    ) internal virtual;
+
+    function _recordPoolPositionCreated(PoolId poolId) internal virtual;
+
+    function _recordPoolPositionActivityChange(PoolId poolId, bool wasActive, bool isActive) internal virtual;
 
     function _poolManager() internal view virtual returns (IPoolManager);
 }

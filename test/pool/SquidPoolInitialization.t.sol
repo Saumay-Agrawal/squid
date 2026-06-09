@@ -40,6 +40,19 @@ contract SquidPoolInitializationTest is SquidTestBase {
         assertEq(summary.liquidity.totalLiquidity, 0);
         assertEq(summary.liquidity.activeLiquidity, 0);
         assertEq(summary.liquidity.peakActiveLiquidity, 0);
+        assertEq(summary.liquidity.totalLiquidityAtPeakActive, 0);
+        assertEq(summary.liquidity.liquidityUtilisationBps, 0);
+        assertEq(summary.liquidity.peakLiquidityUtilisationBps, 0);
+        assertEq(summary.lps.activeLpCount, 0);
+        assertEq(summary.lps.lifetimeLpCount, 0);
+        assertEq(summary.lps.lpRetentionBps, 0);
+        assertEq(summary.positions.activePositionCount, 0);
+        assertEq(summary.positions.totalPositionCount, 0);
+        assertEq(summary.positions.activePositionPercentageBps, 0);
+        assertEq(summary.tradeFlow.totalSwapCount, 0);
+        assertEq(summary.tradeFlow.zeroToOneSwapCount, 0);
+        assertEq(summary.tradeFlow.oneToZeroSwapCount, 0);
+        assertEq(summary.tradeFlow.flowSkewnessBps, 0);
     }
 
     function test_symbolFallbacksDoNotBlockInitialization() public {

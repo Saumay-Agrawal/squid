@@ -69,6 +69,9 @@ type ArtifactPool = {
         totalLiquidity: string | number;
         activeLiquidity: string | number;
         peakActiveLiquidity: string | number;
+        totalLiquidityAtPeakActive: string | number;
+        liquidityUtilisationBps: number;
+        peakLiquidityUtilisationBps: number;
       };
     };
     currentPoolState: {
@@ -147,6 +150,9 @@ export type PoolSummary = {
   totalLiquidity: bigint;
   activeLiquidity: bigint;
   peakActiveLiquidity: bigint;
+  totalLiquidityAtPeakActive: bigint;
+  liquidityUtilisationBps: number;
+  peakLiquidityUtilisationBps: number;
   lpCount: number;
   positionCount: number;
   activePositionCount: number;
@@ -226,6 +232,9 @@ export function loadSquidDashboard(): SquidDashboardData {
       totalLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.totalLiquidity),
       activeLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.activeLiquidity),
       peakActiveLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.peakActiveLiquidity),
+      totalLiquidityAtPeakActive: toBigInt(pool.finalState.poolSummary.liquidity.totalLiquidityAtPeakActive),
+      liquidityUtilisationBps: pool.finalState.poolSummary.liquidity.liquidityUtilisationBps,
+      peakLiquidityUtilisationBps: pool.finalState.poolSummary.liquidity.peakLiquidityUtilisationBps,
       lpCount: pool.lpAddresses.length,
       positionCount: positions.length,
       activePositionCount: positions.filter((position) => position.summary.active).length,

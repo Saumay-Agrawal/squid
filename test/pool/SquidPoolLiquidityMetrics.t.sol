@@ -30,6 +30,9 @@ contract SquidPoolLiquidityMetricsTest is SquidTestBase {
         assertEq(summary.liquidity.totalLiquidity, 1e18);
         assertEq(summary.liquidity.activeLiquidity, 1e18);
         assertEq(summary.liquidity.peakActiveLiquidity, 1e18);
+        assertEq(summary.liquidity.totalLiquidityAtPeakActive, 1e18);
+        assertEq(summary.liquidity.liquidityUtilisationBps, 10_000);
+        assertEq(summary.liquidity.peakLiquidityUtilisationBps, 10_000);
     }
 
     function test_outOfRangeLiquidityOnlyAffectsTotalLiquidity() public {
@@ -49,6 +52,9 @@ contract SquidPoolLiquidityMetricsTest is SquidTestBase {
         assertEq(summary.liquidity.totalLiquidity, 1e18);
         assertEq(summary.liquidity.activeLiquidity, 0);
         assertEq(summary.liquidity.peakActiveLiquidity, 0);
+        assertEq(summary.liquidity.totalLiquidityAtPeakActive, 0);
+        assertEq(summary.liquidity.liquidityUtilisationBps, 0);
+        assertEq(summary.liquidity.peakLiquidityUtilisationBps, 0);
     }
 
     function test_removeLiquidityUpdatesTotalAndActiveLiquidity() public {
@@ -72,6 +78,9 @@ contract SquidPoolLiquidityMetricsTest is SquidTestBase {
         assertEq(summary.liquidity.totalLiquidity, 2e18);
         assertEq(summary.liquidity.activeLiquidity, 2e18);
         assertEq(summary.liquidity.peakActiveLiquidity, 3e18);
+        assertEq(summary.liquidity.totalLiquidityAtPeakActive, 3e18);
+        assertEq(summary.liquidity.liquidityUtilisationBps, 10_000);
+        assertEq(summary.liquidity.peakLiquidityUtilisationBps, 10_000);
     }
 
     function test_swapRefreshesActiveLiquidityAndPreservesPeak() public {
@@ -95,6 +104,9 @@ contract SquidPoolLiquidityMetricsTest is SquidTestBase {
         assertEq(beforeSwap.liquidity.totalLiquidity, 3e18);
         assertEq(beforeSwap.liquidity.activeLiquidity, 1e18);
         assertEq(beforeSwap.liquidity.peakActiveLiquidity, 1e18);
+        assertEq(beforeSwap.liquidity.totalLiquidityAtPeakActive, 1e18);
+        assertEq(beforeSwap.liquidity.liquidityUtilisationBps, 3333);
+        assertEq(beforeSwap.liquidity.peakLiquidityUtilisationBps, 10_000);
 
         swap(poolKey, true, -1e18, "");
 
@@ -102,5 +114,46 @@ contract SquidPoolLiquidityMetricsTest is SquidTestBase {
         assertEq(afterSwap.liquidity.totalLiquidity, 3e18);
         assertEq(afterSwap.liquidity.activeLiquidity, 0);
         assertEq(afterSwap.liquidity.peakActiveLiquidity, 1e18);
+        assertEq(afterSwap.liquidity.totalLiquidityAtPeakActive, 1e18);
+        assertEq(afterSwap.liquidity.liquidityUtilisationBps, 0);
+        assertEq(afterSwap.liquidity.peakLiquidityUtilisationBps, 10_000);
+    }
+
+    function test_peakLiquidityUtilisationUsesTotalLiquidityAtPeak() public {
+        TestToken tokenA = new TestToken("Token A", "TKNA");
+        TestToken tokenB = new TestToken("Token B", "TKNB");
+        _mintAndApprove(address(tokenA));
+        _mintAndApprove(address(tokenB));
+
+        PoolKey memory poolKey = _buildPoolKey(address(tokenA), address(tokenB));
+        manager.initialize(poolKey, uint160(TickMath.getSqrtPriceAtTick(0)));
+
+        ModifyLiquidityParams memory currentRangeParams =
+            ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: bytes32("alpha")});
+        ModifyLiquidityParams memory upperRangeParams =
+            ModifyLiquidityParams({tickLower: 120, tickUpper: 240, liquidityDelta: 2e18, salt: bytes32("beta")});
+        ModifyLiquidityParams memory removeUpperParams =
+            ModifyLiquidityParams({tickLower: 120, tickUpper: 240, liquidityDelta: -1e18, salt: bytes32("beta")});
+
+        modifyLiquidityRouter.modifyLiquidity(poolKey, currentRangeParams, "");
+        modifyLiquidityRouter.modifyLiquidity(poolKey, upperRangeParams, "");
+
+        PoolSummary memory afterAdds = hook.getPoolSummary(poolKey.toId());
+        assertEq(afterAdds.liquidity.totalLiquidity, 3e18);
+        assertEq(afterAdds.liquidity.activeLiquidity, 1e18);
+        assertEq(afterAdds.liquidity.peakActiveLiquidity, 1e18);
+        assertEq(afterAdds.liquidity.totalLiquidityAtPeakActive, 1e18);
+        assertEq(afterAdds.liquidity.liquidityUtilisationBps, 3333);
+        assertEq(afterAdds.liquidity.peakLiquidityUtilisationBps, 10_000);
+
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeUpperParams, "");
+
+        PoolSummary memory afterRemoval = hook.getPoolSummary(poolKey.toId());
+        assertEq(afterRemoval.liquidity.totalLiquidity, 2e18);
+        assertEq(afterRemoval.liquidity.activeLiquidity, 1e18);
+        assertEq(afterRemoval.liquidity.peakActiveLiquidity, 1e18);
+        assertEq(afterRemoval.liquidity.totalLiquidityAtPeakActive, 1e18);
+        assertEq(afterRemoval.liquidity.liquidityUtilisationBps, 5_000);
+        assertEq(afterRemoval.liquidity.peakLiquidityUtilisationBps, 10_000);
     }
 }
