@@ -75,10 +75,10 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
         <aside className="lg:sticky lg:top-24 lg:h-[calc(100vh-7rem)]">
           <Card className="h-full overflow-hidden border-sidebar-border/70 bg-sidebar/90">
             <CardHeader className="gap-4">
-              <div>
-                <CardTitle className="text-base">Workspace</CardTitle>
-                <CardDescription>Navigate between market-wide pool views, the full LP roster, and the selected wallet.</CardDescription>
-              </div>
+                <div>
+                  <CardTitle className="text-base">Workspace</CardTitle>
+                  <CardDescription>Navigate between market-wide pool health, the full LP roster, and the selected wallet.</CardDescription>
+                </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <SectionButton
@@ -173,7 +173,7 @@ function SidebarContext({
     section === "pools"
       ? {
           title: "Pools view",
-          note: `${data.market.basePair} across ${data.seedManifest.positionCount} seeded positions.`,
+          note: `${data.market.basePair} with utilization, retention, and trade-flow metrics across ${data.seedManifest.positionCount} seeded positions.`,
           value: `${data.seedManifest.poolCount} pools`,
           detail: null,
           positive: undefined,
@@ -181,7 +181,7 @@ function SidebarContext({
       : section === "lps"
         ? {
             title: "LP roster",
-            note: `${data.seedManifest.swapCount} seeded swaps across ${data.seedManifest.lpCount} wallets.`,
+            note: `${data.seedManifest.swapCount} seeded swaps across ${data.seedManifest.lpCount} wallets, with token-level flow and PnL detail.`,
             value: `${data.seedManifest.lpCount} wallets`,
             detail: null,
             positive: undefined,

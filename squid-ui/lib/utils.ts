@@ -41,6 +41,10 @@ export function formatFeeTier(value: number) {
   return `${(value / 10_000).toFixed(2)}%`;
 }
 
+export function formatBps(value: number) {
+  return `${(value / 100).toFixed(2)}%`;
+}
+
 export function formatAmount(value: bigint) {
   return value.toLocaleString("en-US");
 }
@@ -78,6 +82,35 @@ export function startCase(value: string) {
     .filter(Boolean)
     .map((segment) => `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`)
     .join(" ");
+}
+
+export function formatTokenPair(label0: string, value0: bigint, label1: string, value1: bigint) {
+  return `${label0} ${formatAmount(value0)} / ${label1} ${formatAmount(value1)}`;
+}
+
+export function formatCompactTokenPair(label0: string, value0: bigint, label1: string, value1: bigint) {
+  const left = formatAmountParts(value0);
+  const right = formatAmountParts(value1);
+  return {
+    primary: `${label0} ${left.primary} / ${label1} ${right.primary}`,
+    secondary:
+      left.secondary || right.secondary
+        ? `${label0} ${left.secondary ?? left.primary} / ${label1} ${right.secondary ?? right.primary}`
+        : null,
+  };
+}
+
+export function formatBlock(value: number) {
+  return value.toLocaleString("en-US");
+}
+
+export function formatTimestamp(value: number) {
+  return new Date(value * 1000).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function formatReadableScale(value: bigint, signed: boolean) {

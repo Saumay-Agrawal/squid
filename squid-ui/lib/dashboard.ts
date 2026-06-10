@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 type Artifact = {
-  format: "seed-v1";
+  format: "seed-v2";
   chainId: number;
   contracts: ArtifactContracts;
   market: ArtifactMarket;
@@ -61,21 +61,46 @@ type ArtifactPool = {
   finalState: {
     poolSummary: {
       poolId: string;
+      initialized: boolean;
+      initializedBlock: number;
+      initializedTimestamp: number;
+      token0: string;
+      token1: string;
       token0Symbol: string;
       token1Symbol: string;
       fee: number;
       tickSpacing: number;
+      initialSqrtPriceX96: string | number;
       liquidity: {
         totalLiquidity: string | number;
         activeLiquidity: string | number;
         peakActiveLiquidity: string | number;
-        totalLiquidityAtPeakActive?: string | number;
+        totalLiquidityAtPeakActive: string | number;
         liquidityUtilisationBps: number;
         peakLiquidityUtilisationBps: number;
       };
+      lps: {
+        activeLpCount: number;
+        lifetimeLpCount: number;
+        lpRetentionBps: number;
+      };
+      positions: {
+        activePositionCount: number;
+        totalPositionCount: number;
+        activePositionPercentageBps: number;
+      };
+      tradeFlow: {
+        totalSwapCount: number;
+        zeroToOneSwapCount: number;
+        oneToZeroSwapCount: number;
+        flowSkewnessBps: number;
+      };
     };
     currentPoolState: {
+      sqrtPriceX96: string | number;
       tick: number;
+      protocolFee: number;
+      lpFee: number;
     };
   };
 };
@@ -88,15 +113,37 @@ type ArtifactPosition = {
   positionId: string;
   tickLower: number;
   tickUpper: number;
+  salt: string;
+  seedLiquidityDelta: string | number;
   summary: {
+    positionId: string;
+    initialized: boolean;
     active: boolean;
+    age: number;
+    createdBlock: number;
+    createdTimestamp: number;
+    updatedBlock: number;
+    updatedTimestamp: number;
+    owner: string;
+    coreOwner: string;
     poolId: string;
+    tickLower: number;
+    tickUpper: number;
+    salt: string;
   };
   liquidity: {
     totalLiquidity: string | number;
     activeLiquidity: string | number;
+    activeSwapVolume0: string | number;
+    activeSwapVolume1: string | number;
+    lifetimeSwapVolume0: string | number;
+    lifetimeSwapVolume1: string | number;
   };
   pnl: {
+    principalAmount0: string | number;
+    principalAmount1: string | number;
+    currentAmount0: string | number;
+    currentAmount1: string | number;
     feeAccumulated0: string | number;
     feeAccumulated1: string | number;
     netPnl0: string | number;
@@ -117,11 +164,33 @@ export type PositionSnapshot = {
   label: string;
   positionId: string;
   active: boolean;
+  poolId: string;
+  poolLabel: string;
+  owner: string;
+  coreOwner: string;
   tickLower: number;
   tickUpper: number;
+  salt: string;
+  age: number;
+  createdBlock: number;
+  createdTimestamp: number;
+  updatedBlock: number;
+  updatedTimestamp: number;
   liquidity: bigint;
   activeLiquidity: bigint;
+  activeSwapVolume0: bigint;
+  activeSwapVolume1: bigint;
+  lifetimeSwapVolume0: bigint;
+  lifetimeSwapVolume1: bigint;
+  principalAmount0: bigint;
+  principalAmount1: bigint;
+  currentAmount0: bigint;
+  currentAmount1: bigint;
+  feeAccumulated0: bigint;
+  feeAccumulated1: bigint;
   fees: bigint;
+  netPnl0: bigint;
+  netPnl1: bigint;
   netPnl: bigint;
 };
 
@@ -135,8 +204,17 @@ export type PositionGroup = {
   positionCount: number;
   activePositionCount: number;
   totalLiquidity: bigint;
+  totalActiveLiquidity: bigint;
   totalFees: bigint;
   totalPnl: bigint;
+  totalPrincipal0: bigint;
+  totalPrincipal1: bigint;
+  totalCurrent0: bigint;
+  totalCurrent1: bigint;
+  totalActiveSwapVolume0: bigint;
+  totalActiveSwapVolume1: bigint;
+  totalLifetimeSwapVolume0: bigint;
+  totalLifetimeSwapVolume1: bigint;
 };
 
 export type PoolSummary = {
@@ -147,15 +225,28 @@ export type PoolSummary = {
   fee: number;
   tickSpacing: number;
   tick: number;
+  initialSqrtPriceX96: bigint;
+  currentSqrtPriceX96: bigint;
+  protocolFee: number;
+  lpFee: number;
   totalLiquidity: bigint;
   activeLiquidity: bigint;
   peakActiveLiquidity: bigint;
   totalLiquidityAtPeakActive: bigint;
   liquidityUtilisationBps: number;
   peakLiquidityUtilisationBps: number;
+  activeLpCount: number;
+  lifetimeLpCount: number;
+  lpRetentionBps: number;
   lpCount: number;
-  positionCount: number;
   activePositionCount: number;
+  totalPositionCount: number;
+  activePositionPercentageBps: number;
+  positionCount: number;
+  totalSwapCount: number;
+  zeroToOneSwapCount: number;
+  oneToZeroSwapCount: number;
+  flowSkewnessBps: number;
 };
 
 export type LpSummary = {
@@ -170,8 +261,17 @@ export type LpSummary = {
   activePositionCount: number;
   poolCount: number;
   totalLiquidity: bigint;
+  totalActiveLiquidity: bigint;
   totalFees: bigint;
   totalPnl: bigint;
+  totalPrincipal0: bigint;
+  totalPrincipal1: bigint;
+  totalCurrent0: bigint;
+  totalCurrent1: bigint;
+  totalActiveSwapVolume0: bigint;
+  totalActiveSwapVolume1: bigint;
+  totalLifetimeSwapVolume0: bigint;
+  totalLifetimeSwapVolume1: bigint;
   groups: PositionGroup[];
 };
 
@@ -196,7 +296,7 @@ export function loadSquidDashboard(): SquidDashboardData {
   const raw = fs.readFileSync(artifactPath, "utf8");
   const artifact = JSON.parse(raw) as Artifact;
 
-  if (artifact.format !== "seed-v1") {
+  if (artifact.format !== "seed-v2") {
     throw new Error(`Unsupported simulation artifact format: ${artifact.format}`);
   }
 
@@ -219,28 +319,41 @@ export function loadSquidDashboard(): SquidDashboardData {
   }));
 
   const poolSummaries: PoolSummary[] = artifact.pools.map((pool) => {
-    const positions = positionsByPoolId.get(pool.poolId) ?? [];
+    const poolSummary = pool.finalState.poolSummary;
 
     return {
       poolId: pool.poolId,
       poolIndex: pool.index,
       poolLabel: pool.label,
       tokenPair: artifact.market.basePair,
-      fee: pool.finalState.poolSummary.fee,
-      tickSpacing: pool.finalState.poolSummary.tickSpacing,
+      fee: poolSummary.fee,
+      tickSpacing: poolSummary.tickSpacing,
       tick: pool.finalState.currentPoolState.tick,
-      totalLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.totalLiquidity),
-      activeLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.activeLiquidity),
-      peakActiveLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.peakActiveLiquidity),
+      initialSqrtPriceX96: toBigInt(poolSummary.initialSqrtPriceX96),
+      currentSqrtPriceX96: toBigInt(pool.finalState.currentPoolState.sqrtPriceX96),
+      protocolFee: pool.finalState.currentPoolState.protocolFee,
+      lpFee: pool.finalState.currentPoolState.lpFee,
+      totalLiquidity: toBigInt(poolSummary.liquidity.totalLiquidity),
+      activeLiquidity: toBigInt(poolSummary.liquidity.activeLiquidity),
+      peakActiveLiquidity: toBigInt(poolSummary.liquidity.peakActiveLiquidity),
       totalLiquidityAtPeakActive: toBigInt(
-        pool.finalState.poolSummary.liquidity.totalLiquidityAtPeakActive,
-        pool.finalState.poolSummary.liquidity.totalLiquidity,
+        poolSummary.liquidity.totalLiquidityAtPeakActive,
+        poolSummary.liquidity.totalLiquidity,
       ),
-      liquidityUtilisationBps: pool.finalState.poolSummary.liquidity.liquidityUtilisationBps,
-      peakLiquidityUtilisationBps: pool.finalState.poolSummary.liquidity.peakLiquidityUtilisationBps,
-      lpCount: pool.lpAddresses.length,
-      positionCount: positions.length,
-      activePositionCount: positions.filter((position) => position.summary.active).length,
+      liquidityUtilisationBps: poolSummary.liquidity.liquidityUtilisationBps,
+      peakLiquidityUtilisationBps: poolSummary.liquidity.peakLiquidityUtilisationBps,
+      activeLpCount: poolSummary.lps.activeLpCount,
+      lifetimeLpCount: poolSummary.lps.lifetimeLpCount,
+      lpRetentionBps: poolSummary.lps.lpRetentionBps,
+      lpCount: poolSummary.lps.lifetimeLpCount || pool.lpAddresses.length,
+      activePositionCount: poolSummary.positions.activePositionCount,
+      totalPositionCount: poolSummary.positions.totalPositionCount,
+      activePositionPercentageBps: poolSummary.positions.activePositionPercentageBps,
+      positionCount: poolSummary.positions.totalPositionCount,
+      totalSwapCount: poolSummary.tradeFlow.totalSwapCount,
+      zeroToOneSwapCount: poolSummary.tradeFlow.zeroToOneSwapCount,
+      oneToZeroSwapCount: poolSummary.tradeFlow.oneToZeroSwapCount,
+      flowSkewnessBps: poolSummary.tradeFlow.flowSkewnessBps,
     };
   });
 
@@ -251,10 +364,14 @@ export function loadSquidDashboard(): SquidDashboardData {
     const address = position.lp;
     const label = rosterEntry?.label ?? shortenAddressLike(address);
     const pool = poolById.get(position.summary.poolId);
-    const fees = toBigInt(position.pnl.feeAccumulated0) + toBigInt(position.pnl.feeAccumulated1);
-    const netPnl = toBigInt(position.pnl.netPnl0) + toBigInt(position.pnl.netPnl1);
     const liquidity = toBigInt(position.liquidity.totalLiquidity);
     const activeLiquidity = toBigInt(position.liquidity.activeLiquidity);
+    const feeAccumulated0 = toBigInt(position.pnl.feeAccumulated0);
+    const feeAccumulated1 = toBigInt(position.pnl.feeAccumulated1);
+    const netPnl0 = toBigInt(position.pnl.netPnl0);
+    const netPnl1 = toBigInt(position.pnl.netPnl1);
+    const fees = feeAccumulated0 + feeAccumulated1;
+    const netPnl = netPnl0 + netPnl1;
 
     let lp = lpBuckets.get(address);
 
@@ -271,8 +388,17 @@ export function loadSquidDashboard(): SquidDashboardData {
         activePositionCount: 0,
         poolCount: 0,
         totalLiquidity: 0n,
+        totalActiveLiquidity: 0n,
         totalFees: 0n,
         totalPnl: 0n,
+        totalPrincipal0: 0n,
+        totalPrincipal1: 0n,
+        totalCurrent0: 0n,
+        totalCurrent1: 0n,
+        totalActiveSwapVolume0: 0n,
+        totalActiveSwapVolume1: 0n,
+        totalLifetimeSwapVolume0: 0n,
+        totalLifetimeSwapVolume1: 0n,
         groups: [],
       };
       lpBuckets.set(address, lp);
@@ -291,8 +417,17 @@ export function loadSquidDashboard(): SquidDashboardData {
         positionCount: 0,
         activePositionCount: 0,
         totalLiquidity: 0n,
+        totalActiveLiquidity: 0n,
         totalFees: 0n,
         totalPnl: 0n,
+        totalPrincipal0: 0n,
+        totalPrincipal1: 0n,
+        totalCurrent0: 0n,
+        totalCurrent1: 0n,
+        totalActiveSwapVolume0: 0n,
+        totalActiveSwapVolume1: 0n,
+        totalLifetimeSwapVolume0: 0n,
+        totalLifetimeSwapVolume1: 0n,
       };
       lp.groups.push(group);
     }
@@ -302,11 +437,33 @@ export function loadSquidDashboard(): SquidDashboardData {
       label,
       positionId: position.positionId,
       active: position.summary.active,
+      poolId: position.summary.poolId,
+      poolLabel: position.poolLabel,
+      owner: position.summary.owner,
+      coreOwner: position.summary.coreOwner,
       tickLower: position.tickLower,
       tickUpper: position.tickUpper,
+      salt: position.summary.salt,
+      age: position.summary.age,
+      createdBlock: position.summary.createdBlock,
+      createdTimestamp: position.summary.createdTimestamp,
+      updatedBlock: position.summary.updatedBlock,
+      updatedTimestamp: position.summary.updatedTimestamp,
       liquidity,
       activeLiquidity,
+      activeSwapVolume0: toBigInt(position.liquidity.activeSwapVolume0),
+      activeSwapVolume1: toBigInt(position.liquidity.activeSwapVolume1),
+      lifetimeSwapVolume0: toBigInt(position.liquidity.lifetimeSwapVolume0),
+      lifetimeSwapVolume1: toBigInt(position.liquidity.lifetimeSwapVolume1),
+      principalAmount0: toBigInt(position.pnl.principalAmount0),
+      principalAmount1: toBigInt(position.pnl.principalAmount1),
+      currentAmount0: toBigInt(position.pnl.currentAmount0),
+      currentAmount1: toBigInt(position.pnl.currentAmount1),
+      feeAccumulated0,
+      feeAccumulated1,
       fees,
+      netPnl0,
+      netPnl1,
       netPnl,
     };
 
@@ -314,14 +471,32 @@ export function loadSquidDashboard(): SquidDashboardData {
     group.positionCount += 1;
     group.activePositionCount += position.summary.active ? 1 : 0;
     group.totalLiquidity += liquidity;
+    group.totalActiveLiquidity += activeLiquidity;
     group.totalFees += fees;
     group.totalPnl += netPnl;
+    group.totalPrincipal0 += snapshot.principalAmount0;
+    group.totalPrincipal1 += snapshot.principalAmount1;
+    group.totalCurrent0 += snapshot.currentAmount0;
+    group.totalCurrent1 += snapshot.currentAmount1;
+    group.totalActiveSwapVolume0 += snapshot.activeSwapVolume0;
+    group.totalActiveSwapVolume1 += snapshot.activeSwapVolume1;
+    group.totalLifetimeSwapVolume0 += snapshot.lifetimeSwapVolume0;
+    group.totalLifetimeSwapVolume1 += snapshot.lifetimeSwapVolume1;
 
     lp.positionCount += 1;
     lp.activePositionCount += position.summary.active ? 1 : 0;
     lp.totalLiquidity += liquidity;
+    lp.totalActiveLiquidity += activeLiquidity;
     lp.totalFees += fees;
     lp.totalPnl += netPnl;
+    lp.totalPrincipal0 += snapshot.principalAmount0;
+    lp.totalPrincipal1 += snapshot.principalAmount1;
+    lp.totalCurrent0 += snapshot.currentAmount0;
+    lp.totalCurrent1 += snapshot.currentAmount1;
+    lp.totalActiveSwapVolume0 += snapshot.activeSwapVolume0;
+    lp.totalActiveSwapVolume1 += snapshot.activeSwapVolume1;
+    lp.totalLifetimeSwapVolume0 += snapshot.lifetimeSwapVolume0;
+    lp.totalLifetimeSwapVolume1 += snapshot.lifetimeSwapVolume1;
   }
 
   const lpSummaries = knownAddresses
@@ -330,7 +505,12 @@ export function loadSquidDashboard(): SquidDashboardData {
     .map((lp) => ({
       ...lp,
       poolCount: lp.groups.length,
-      groups: lp.groups.sort((left, right) => left.poolIndex - right.poolIndex),
+      groups: lp.groups
+        .map((group) => ({
+          ...group,
+          positions: group.positions.sort((left, right) => left.tickLower - right.tickLower || left.tickUpper - right.tickUpper),
+        }))
+        .sort((left, right) => left.poolIndex - right.poolIndex),
     }));
 
   return {
