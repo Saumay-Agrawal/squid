@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { Activity, ChevronDown, CircleHelp, Droplets, Layers3 } from "lucide-react";
+import { Activity, ArrowRightLeft, ChevronDown, CircleHelp, Droplets, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,17 +17,25 @@ const SUMMARY_METRICS = {
   tradeFlow: "Total seeded swaps executed against the pool, with the direction split shown below.",
 } as const;
 
+const TOP_CARD_METRICS = {
+  pools: "Active pools have at least one active position at the final tick. Total pools counts every seeded pool snapshot.",
+  liquidityUtilisation: "Average share of liquidity currently in range across all pools, with the average peak in-range share shown below.",
+  lpRetention: "Average share of lifetime LP wallets that still have an active position across all pools.",
+  tradeFlow: "Average directional swap-flow skewness across all pools based on seeded swap counts.",
+} as const;
+
 const DETAIL_METRICS = {
   currentTick: "The pool's final tick after all seeded actions finished.",
   feeTier: "The configured pool fee tier applied to swaps in this pool.",
   tickSpacing: "Minimum spacing allowed between initialized ticks in this pool.",
   lpFee: "The LP-facing fee currently applied by the pool state.",
   protocolFee: "The protocol-owned fee currently configured on the pool state.",
-  activeLiquidity: "Liquidity currently in range at the final tick and therefore available to trade.",
-  peakActiveLiquidity: "Highest in-range liquidity observed across the seeded scenario.",
-  totalLiquidity: "Total seeded liquidity assigned to the pool across all positions.",
-  utilization: "Share of total liquidity that is active at the final tick, with the peak share shown below.",
-  flowSkew: "Directional balance of seeded swap flow, with the raw 0->1 and 1->0 counts shown below.",
+  currentLiquidityUtilisation: "Share of total liquidity that is currently active at the pool's final tick.",
+  peakLiquidityUtilisation: "Highest share of total liquidity that was active at any point in the seeded scenario.",
+  totalSwapCount: "Total number of seeded swaps executed against this pool.",
+  zeroToOneSwaps: "Number of seeded swaps that moved from token0 into token1.",
+  oneToZeroSwaps: "Number of seeded swaps that moved from token1 into token0.",
+  flowSkewness: "Directional skew of seeded order flow based on the balance between zero-to-one and one-to-zero swaps.",
   activeLps: "Number of LP wallets with at least one active position at the final tick.",
   lpRetention: "Share of lifetime LP wallets that still have an active position in range.",
   activePositions: "Number of positions currently in range, with total seeded positions shown below.",
@@ -36,23 +44,44 @@ const DETAIL_METRICS = {
 
 export function PoolsView({ pools }: { pools: PoolSummary[] }) {
   const [expandedPoolId, setExpandedPoolId] = useState<string | null>(pools[0]?.poolId ?? null);
-  const totalLiquidity = pools.reduce((sum, pool) => sum + pool.totalLiquidity, 0n);
   const activePools = pools.filter((pool) => pool.activePositionCount > 0).length;
-  const totalActiveLps = pools.reduce((sum, pool) => sum + pool.activeLpCount, 0);
-  const totalSwaps = pools.reduce((sum, pool) => sum + pool.totalSwapCount, 0);
-  const totalLiquidityParts = formatAmountParts(totalLiquidity);
+  const averageLiquidityUtilisationBps = averageBps(pools.map((pool) => pool.liquidityUtilisationBps));
+  const averagePeakLiquidityUtilisationBps = averageBps(pools.map((pool) => pool.peakLiquidityUtilisationBps));
+  const averageLpRetentionBps = averageBps(pools.map((pool) => pool.lpRetentionBps));
+  const averageFlowSkewnessBps = averageBps(pools.map((pool) => pool.flowSkewnessBps));
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 md:grid-cols-3">
-        <MetricCard title="Pools to review" value={String(pools.length)} note="Each seeded fee tier contributes one pool snapshot" icon={Layers3} />
-        <MetricCard title="Pools in range" value={String(activePools)} note="Pools with at least one active position at the final tick" icon={Activity} />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Tracked liquidity"
-          value={totalLiquidityParts.primary}
-          detail={totalLiquidityParts.secondary}
-          note={`${totalActiveLps} active LPs and ${totalSwaps} seeded swaps across the board`}
+          title="Pools"
+          tooltip={TOP_CARD_METRICS.pools}
+          value={String(activePools)}
+          detail={`${pools.length} total`}
+          note="Pools currently in range versus total seeded pool snapshots."
+          icon={Activity}
+        />
+        <MetricCard
+          title="Liquidity utilisation"
+          tooltip={TOP_CARD_METRICS.liquidityUtilisation}
+          value={formatBps(averageLiquidityUtilisationBps)}
+          detail={`peak ${formatBps(averagePeakLiquidityUtilisationBps)}`}
+          note="Average current and peak in-range liquidity share across all pools."
           icon={Droplets}
+        />
+        <MetricCard
+          title="LP retention"
+          tooltip={TOP_CARD_METRICS.lpRetention}
+          value={formatBps(averageLpRetentionBps)}
+          note="Average share of lifetime LPs that remain active across all pools."
+          icon={Users}
+        />
+        <MetricCard
+          title="Trade flow"
+          tooltip={TOP_CARD_METRICS.tradeFlow}
+          value={formatBps(averageFlowSkewnessBps)}
+          note="Average directional skewness of seeded trade flow across all pools."
+          icon={ArrowRightLeft}
         />
       </section>
 
@@ -86,9 +115,6 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                 {pools.map((pool) => {
                   const isExpanded = expandedPoolId === pool.poolId;
                   const detailId = `pool-detail-${pool.poolId}`;
-                  const activeLiquidityParts = formatAmountParts(pool.activeLiquidity);
-                  const peakActiveLiquidityParts = formatAmountParts(pool.peakActiveLiquidity);
-                  const totalLiquidityParts = formatAmountParts(pool.totalLiquidity);
 
                   return (
                     <Fragment key={pool.poolId}>
@@ -154,38 +180,38 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                                     ]}
                                   />
                                   <GroupedMetricsCard
-                                    title="Liquidity & flow"
-                                    description="How much liquidity is usable and how swaps were distributed."
+                                    title="Liquidity & order flow"
+                                    description="Liquidity utilisation and directional swap activity for this pool."
                                     metrics={[
                                       {
-                                        label: "Active liquidity",
-                                        value: activeLiquidityParts.primary,
-                                        detail: activeLiquidityParts.secondary,
-                                        tooltip: DETAIL_METRICS.activeLiquidity,
-                                      },
-                                      {
-                                        label: "Peak active liquidity",
-                                        value: peakActiveLiquidityParts.primary,
-                                        detail: peakActiveLiquidityParts.secondary,
-                                        tooltip: DETAIL_METRICS.peakActiveLiquidity,
-                                      },
-                                      {
-                                        label: "Total liquidity",
-                                        value: totalLiquidityParts.primary,
-                                        detail: totalLiquidityParts.secondary,
-                                        tooltip: DETAIL_METRICS.totalLiquidity,
-                                      },
-                                      {
-                                        label: "Utilization",
+                                        label: "Current liquidity utilisation",
                                         value: formatBps(pool.liquidityUtilisationBps),
-                                        detail: `peak ${formatBps(pool.peakLiquidityUtilisationBps)}`,
-                                        tooltip: DETAIL_METRICS.utilization,
+                                        tooltip: DETAIL_METRICS.currentLiquidityUtilisation,
                                       },
                                       {
-                                        label: "Flow skew",
+                                        label: "Peak liquidity utilisation",
+                                        value: formatBps(pool.peakLiquidityUtilisationBps),
+                                        tooltip: DETAIL_METRICS.peakLiquidityUtilisation,
+                                      },
+                                      {
+                                        label: "Total swap count",
+                                        value: String(pool.totalSwapCount),
+                                        tooltip: DETAIL_METRICS.totalSwapCount,
+                                      },
+                                      {
+                                        label: "Zero to one swaps",
+                                        value: String(pool.zeroToOneSwapCount),
+                                        tooltip: DETAIL_METRICS.zeroToOneSwaps,
+                                      },
+                                      {
+                                        label: "One to zero swaps",
+                                        value: String(pool.oneToZeroSwapCount),
+                                        tooltip: DETAIL_METRICS.oneToZeroSwaps,
+                                      },
+                                      {
+                                        label: "Flow skewness",
                                         value: formatBps(pool.flowSkewnessBps),
-                                        detail: `${pool.zeroToOneSwapCount} 0->1 / ${pool.oneToZeroSwapCount} 1->0`,
-                                        tooltip: DETAIL_METRICS.flowSkew,
+                                        tooltip: DETAIL_METRICS.flowSkewness,
                                       },
                                     ]}
                                   />
@@ -243,12 +269,14 @@ function MetricHeader({ label, tooltip }: { label: string; tooltip: string }) {
 
 function MetricCard({
   title,
+  tooltip,
   value,
   detail,
   note,
   icon: Icon,
 }: {
   title: string;
+  tooltip: string;
   value: string;
   detail?: string | null;
   note: string;
@@ -258,7 +286,9 @@ function MetricCard({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between space-y-0">
         <div>
-          <CardDescription className="uppercase tracking-[0.14em]">{title}</CardDescription>
+          <CardDescription className="uppercase tracking-[0.14em]">
+            <MetricLabel label={title} tooltip={tooltip} />
+          </CardDescription>
           <CardTitle className="mt-2 text-2xl tracking-[-0.03em]">{value}</CardTitle>
           {detail ? <div className="mt-1 text-sm text-muted-foreground">{detail}</div> : null}
         </div>
@@ -371,4 +401,9 @@ function MetricStack({
 
 function StatusBadge({ active }: { active: boolean }) {
   return <Badge className={cn(active ? "bg-emerald-600 text-white" : "bg-transparent text-foreground", active ? "" : "border-border")} variant={active ? "default" : "outline"}>{active ? "In range" : "Out of range"}</Badge>;
+}
+
+function averageBps(values: number[]) {
+  if (values.length === 0) return 0;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
