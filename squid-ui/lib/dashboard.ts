@@ -71,6 +71,14 @@ type ArtifactPool = {
       fee: number;
       tickSpacing: number;
       initialSqrtPriceX96: string | number;
+      amounts: {
+        initialToken0Amount: string | number;
+        initialToken1Amount: string | number;
+        currentToken0Amount: string | number;
+        currentToken1Amount: string | number;
+        totalFeeAccruedToken0: string | number;
+        totalFeeAccruedToken1: string | number;
+      };
       liquidity: {
         totalLiquidity: string | number;
         activeLiquidity: string | number;
@@ -222,6 +230,8 @@ export type PoolSummary = {
   poolIndex: number;
   poolLabel: string;
   tokenPair: string;
+  token0Symbol: string;
+  token1Symbol: string;
   fee: number;
   tickSpacing: number;
   tick: number;
@@ -247,6 +257,12 @@ export type PoolSummary = {
   zeroToOneSwapCount: number;
   oneToZeroSwapCount: number;
   flowSkewnessBps: number;
+  initialToken0Amount: bigint;
+  initialToken1Amount: bigint;
+  currentToken0Amount: bigint;
+  currentToken1Amount: bigint;
+  totalFeeAccruedToken0: bigint;
+  totalFeeAccruedToken1: bigint;
 };
 
 export type LpSummary = {
@@ -320,12 +336,15 @@ export function loadSquidDashboard(): SquidDashboardData {
 
   const poolSummaries: PoolSummary[] = artifact.pools.map((pool) => {
     const poolSummary = pool.finalState.poolSummary;
+    const poolAmounts = poolSummary.amounts;
 
     return {
       poolId: pool.poolId,
       poolIndex: pool.index,
       poolLabel: pool.label,
       tokenPair: artifact.market.basePair,
+      token0Symbol: poolSummary.token0Symbol,
+      token1Symbol: poolSummary.token1Symbol,
       fee: poolSummary.fee,
       tickSpacing: poolSummary.tickSpacing,
       tick: pool.finalState.currentPoolState.tick,
@@ -354,6 +373,12 @@ export function loadSquidDashboard(): SquidDashboardData {
       zeroToOneSwapCount: poolSummary.tradeFlow.zeroToOneSwapCount,
       oneToZeroSwapCount: poolSummary.tradeFlow.oneToZeroSwapCount,
       flowSkewnessBps: poolSummary.tradeFlow.flowSkewnessBps,
+      initialToken0Amount: toBigInt(poolAmounts?.initialToken0Amount),
+      initialToken1Amount: toBigInt(poolAmounts?.initialToken1Amount),
+      currentToken0Amount: toBigInt(poolAmounts?.currentToken0Amount),
+      currentToken1Amount: toBigInt(poolAmounts?.currentToken1Amount),
+      totalFeeAccruedToken0: toBigInt(poolAmounts?.totalFeeAccruedToken0),
+      totalFeeAccruedToken1: toBigInt(poolAmounts?.totalFeeAccruedToken1),
     };
   });
 

@@ -46,7 +46,7 @@ function GroupedMetricsCard({
   description: string;
   metrics: Array<{
     label: string;
-    value: string;
+    value: React.ReactNode;
     detail?: string | null;
     tooltip: string;
     mono?: boolean;
@@ -77,7 +77,7 @@ function StatLine({
   mono = false,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   detail?: string | null;
   tooltip: string;
   positive?: boolean;

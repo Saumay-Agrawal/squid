@@ -6,7 +6,9 @@ import { useEffect, useState } from "react";
 import { LpsView } from "@/components/lps-view";
 import { PoolsView } from "@/components/pools-view";
 import { ProfileView } from "@/components/profile-view";
+import { HexValue } from "@/components/ui/hex-value";
 import { ConnectWallet } from "@/components/wallet/connect-wallet";
+import { SelectedWalletBalances } from "@/components/wallet/selected-wallet-balances";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +23,7 @@ const STORAGE_KEY = "squid-ui:selected-address";
 export function DashboardShell({ data }: { data: SquidDashboardData }) {
   const [section, setSection] = useState<Section>("profile");
   const [selectedAddress, setSelectedAddress] = useState<string>(data.knownAddresses[0]?.address ?? "");
+  const [expandedPoolId, setExpandedPoolId] = useState<string | null>(data.poolSummaries[0]?.poolId ?? null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -42,6 +45,11 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
 
   const activeAddress = data.knownAddresses.find((entry) => entry.address === selectedAddress) ?? null;
   const profile = data.lpSummaries.find((entry) => entry.address === selectedAddress) ?? null;
+
+  function handleOpenPoolDetails(poolId: string) {
+    setExpandedPoolId(poolId);
+    setSection("pools");
+  }
 
   return (
     <div className="min-h-screen pb-10">
@@ -73,14 +81,14 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
 
       <div className="mx-auto grid max-w-[1440px] gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="lg:sticky lg:top-24 lg:h-[calc(100vh-7rem)]">
-          <Card className="h-full overflow-hidden border-sidebar-border/70 bg-sidebar/90">
+          <Card className="flex h-full min-h-0 flex-col overflow-hidden border-sidebar-border/70 bg-sidebar/90">
             <CardHeader className="gap-4">
                 <div>
                   <CardTitle className="text-base">Workspace</CardTitle>
                   <CardDescription>Navigate between market-wide pool health, the full LP roster, and the selected wallet.</CardDescription>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto">
               <SectionButton
                 active={section === "pools"}
                 icon={Droplets}
@@ -111,10 +119,16 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
         </aside>
 
         <main className="min-w-0 space-y-4">
-          {section === "pools" ? <PoolsView pools={data.poolSummaries} /> : null}
+          {section === "pools" ? <PoolsView pools={data.poolSummaries} expandedPoolId={expandedPoolId} onExpandedPoolChange={setExpandedPoolId} /> : null}
           {section === "lps" ? <LpsView lps={data.lpSummaries} selectedAddress={selectedAddress} /> : null}
           {section === "profile" ? (
-            <ProfileView lps={data.lpSummaries} selectedAddress={selectedAddress} selectedLabel={activeAddress?.label ?? null} />
+            <ProfileView
+              lps={data.lpSummaries}
+              pools={data.poolSummaries}
+              selectedAddress={selectedAddress}
+              selectedLabel={activeAddress?.label ?? null}
+              onOpenPoolDetails={handleOpenPoolDetails}
+            />
           ) : null}
         </main>
       </div>
@@ -186,13 +200,47 @@ function SidebarContext({
             detail: null,
             positive: undefined,
           }
-        : {
-            title: "Selected wallet",
-            note: profile ? `${profile.activePositionCount} active positions across ${profile.poolCount} pools.` : "Choose a wallet to load a profile summary.",
-            value: profilePnlParts?.primary ?? "No wallet",
-            detail: profilePnlParts?.secondary ?? null,
-            positive: profile ? profile.totalPnl >= 0n : undefined,
-          };
+        : null;
+
+  if (section === "profile") {
+    return (
+      <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
+        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected wallet</div>
+        <div className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">
+          {profile?.label ?? "No wallet"}
+        </div>
+        <div className="mt-1 text-sm text-muted-foreground">
+          {profile ? <HexValue value={profile.address} textClassName="text-sm text-muted-foreground" /> : "Choose a wallet to load token balances."}
+        </div>
+        <div className="mt-2 text-sm text-muted-foreground">
+          {profile
+            ? `${profile.activePositionCount} active positions across ${profile.poolCount} pools. Aggregate PnL ${profilePnlParts?.primary ?? "N/A"}.`
+            : "Choose a wallet to load token balances."}
+        </div>
+        {profile ? (
+          <SelectedWalletBalances
+            walletAddress={profile.address}
+            token0={{ address: data.market.token0, symbol: data.market.token0Symbol }}
+            token1={{ address: data.market.token1, symbol: data.market.token1Symbol }}
+          />
+        ) : null}
+        <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-3">
+            <span>PoolManager</span>
+            <HexValue value={data.contracts.poolManager} textClassName="text-[11px] text-foreground" />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span>Squid hook</span>
+            <HexValue value={data.contracts.squid} textClassName="text-[11px] text-foreground" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return null;
+  }
 
   return (
     <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
@@ -210,11 +258,11 @@ function SidebarContext({
       <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">
         <div className="flex items-center justify-between gap-3">
           <span>PoolManager</span>
-          <span className="font-mono text-[11px] text-foreground">{data.contracts.poolManager.slice(0, 8)}...{data.contracts.poolManager.slice(-4)}</span>
+          <HexValue value={data.contracts.poolManager} textClassName="text-[11px] text-foreground" />
         </div>
         <div className="flex items-center justify-between gap-3">
           <span>Squid hook</span>
-          <span className="font-mono text-[11px] text-foreground">{data.contracts.squid.slice(0, 8)}...{data.contracts.squid.slice(-4)}</span>
+          <HexValue value={data.contracts.squid} textClassName="text-[11px] text-foreground" />
         </div>
       </div>
     </div>

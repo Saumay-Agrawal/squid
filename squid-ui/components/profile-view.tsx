@@ -1,80 +1,78 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Activity, ArrowRightLeft, ChevronDown, ExternalLink, Droplets, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { HexValue } from "@/components/ui/hex-value";
 import { GroupedMetricsCard, MetricLabel, MetricStack, PnlValue } from "@/components/ui/metric-elements";
-import { cn, formatAmount, formatAmountParts, formatBlock, formatCompactTokenPair, formatFeeTier, formatSignedAmount, formatSignedAmountParts, formatTimestamp, shortenAddress, shortenHash, startCase } from "@/lib/utils";
-import type { LpSummary } from "@/lib/dashboard";
+import { cn, formatAmount, formatAmountParts, formatBlock, formatBps, formatCompactTokenPair, formatFeeTier, formatRatioPercent, formatSignedAmount, formatSignedAmountParts, formatTimestamp, shortenHash, startCase } from "@/lib/utils";
+import type { LpSummary, PoolSummary } from "@/lib/dashboard";
 
 const PROFILE_METRICS = {
-  positions: "Total tracked positions for your selected wallet.",
-  active: "Positions currently in range at the final simulated tick.",
-  liquidity: "Total liquidity assigned to your wallet across all positions.",
-  activeLiquidity: "Liquidity currently in range across your active positions.",
+  positions: "Current active positions shown against the total tracked positions for your selected wallet.",
+  liquidityActive: "Share of your wallet's total liquidity that is currently in range.",
   netPnl: "Net outcome across all of your tracked positions.",
-  usdBalance: "Initial USD balance assigned to your wallet in the seed manifest.",
-  ethBalance: "Initial ETH balance assigned to your wallet in the seed manifest.",
-  lifetimeFlow: "Total swap volume your positions experienced across the full scenario.",
-  feeCapture: "Total fees accrued across all grouped positions.",
-  activeFlow: "Swap volume seen while your positions were in range.",
-  plannedPositions: "Original seeded target for your wallet in the scenario manifest.",
-  exposure: "How many pools your wallet is currently exposed to in the final snapshot.",
 } as const;
 
 const PROFILE_GROUP_ROW_METRICS = {
-  liquidity: "Total liquidity your wallet has assigned to this pool.",
-  fees: "Fees accrued by your positions in this pool.",
+  token0Invested: "Total token 0 principal your wallet committed across positions in this pool.",
+  token1Invested: "Total token 1 principal your wallet committed across positions in this pool.",
   pnl: "Net outcome for your positions in this pool.",
   positions: "Total positions you seeded in this pool, with active positions shown underneath.",
 } as const;
 
 const PROFILE_GROUP_DETAIL_METRICS = {
-  liquidity: "Total liquidity your wallet has assigned to this pool.",
-  activeLiquidity: "Liquidity from your wallet that is still in range in this pool.",
-  fees: "Fees accrued by your wallet from this pool.",
-  pnl: "Net result from your positions in this pool.",
-  lifetimeFlow: "Total swap volume experienced by your positions in this pool.",
-  feeTier: "Configured swap fee tier for this pool.",
-  tickSpacing: "Minimum spacing between initialized ticks for this pool.",
+  utilization: "Share of total pool liquidity currently active at the final tick, with the peak share shown for comparison.",
+  lps: "Active LP wallets over lifetime LP wallets for this pool, with retained share shown underneath.",
+  positions: "Active positions over total seeded positions for this pool, with active share shown underneath.",
+  tradeFlow: "Total seeded swaps executed against this pool, with direction split shown underneath.",
 } as const;
 
 const POSITION_ROW_METRICS = {
+  identifier: "Compact position identifier derived from the tracked position ID.",
   status: "Whether the position is in range at the final simulated tick.",
-  liquidity: "Total liquidity assigned to this position.",
+  token0Invested: "Original token 0 amount committed to establish this position.",
+  token1Invested: "Original token 1 amount committed to establish this position.",
   pnl: "Net outcome for this position across both tokens.",
 } as const;
 
 const POSITION_DETAIL_METRICS = {
   positionId: "Unique identifier for the position NFT or tracked position record.",
+  range: "Lower and upper ticks that define where this position is active.",
   rangeWidth: "Distance between the lower and upper ticks for this position.",
-  activeLiquidity: "Liquidity currently in range at the final simulated tick.",
-  totalLiquidity: "Total liquidity assigned to the position.",
-  feesAccrued: "Aggregate fees accrued by the position.",
-  principal: "Original token amounts committed to establish this position.",
-  currentAmounts: "Current token amounts represented by the position at the final state.",
-  activeSwapFlow: "Swap volume seen only while the position was active in range.",
-  lifetimeSwapFlow: "Total swap volume seen across the whole scenario, whether active or not.",
-  tokenFees: "Fees accrued by token denomination rather than as a combined total.",
-  tokenPnl: "Net token-by-token profit and loss for the position.",
-  owner: "Wallet recorded as the position owner in the simulation artifact.",
-  coreOwner: "Core ownership address tracked by the underlying protocol state.",
-  created: "Block and timestamp when this position was first created.",
-  updated: "Most recent block and timestamp captured for this position.",
+  status: "Whether the position is in range at the final simulated tick.",
+  created: "Timestamp and block when this position was first created.",
+  age: "Elapsed time in seconds since the position was created.",
+  initialToken0: "Original token 0 amount committed to establish this position.",
+  initialToken1: "Original token 1 amount committed to establish this position.",
+  currentToken0: "Current token 0 amount represented by the position at the final state.",
+  currentToken1: "Current token 1 amount represented by the position at the final state.",
+  feesToken0: "Fees accrued by this position in token 0.",
+  feesToken1: "Fees accrued by this position in token 1.",
+  activeLiquidityShare: "Share of this position's liquidity that is currently in range.",
+  activeSwapVolume0Share: "Share of token 0 swap volume that occurred while this position was active in range.",
+  activeSwapVolume1Share: "Share of token 1 swap volume that occurred while this position was active in range.",
+  netPnl: "Net outcome for this position across both tokens.",
 } as const;
 
 export function ProfileView({
   lps,
+  pools,
   selectedAddress,
   selectedLabel,
+  onOpenPoolDetails,
 }: {
   lps: LpSummary[];
+  pools: PoolSummary[];
   selectedAddress: string;
   selectedLabel: string | null;
+  onOpenPoolDetails: (poolId: string) => void;
 }) {
   const profile = lps.find((entry) => entry.address === selectedAddress) ?? null;
+  const poolsById = new Map(pools.map((pool) => [pool.poolId, pool] as const));
 
   if (!profile) {
     return (
@@ -87,14 +85,8 @@ export function ProfileView({
     );
   }
 
-  const liquidityParts = formatAmountParts(profile.totalLiquidity);
-  const activeLiquidityParts = formatAmountParts(profile.totalActiveLiquidity);
   const pnlParts = formatSignedAmountParts(profile.totalPnl);
-  const seededUsdParts = profile.seededUsdBalance === null ? null : formatAmountParts(profile.seededUsdBalance);
-  const seededEthParts = profile.seededEthBalance === null ? null : formatAmountParts(profile.seededEthBalance);
-  const feeCaptureParts = formatAmountParts(profile.totalFees);
-  const lifetimeFlowParts = formatCompactTokenPair("USD", profile.totalLifetimeSwapVolume0, "ETH", profile.totalLifetimeSwapVolume1);
-  const activeFlowParts = formatCompactTokenPair("USD", profile.totalActiveSwapVolume0, "ETH", profile.totalActiveSwapVolume1);
+  const liquidityActivePercent = formatRatioPercent(profile.totalActiveLiquidity, profile.totalLiquidity);
 
   return (
     <div className="space-y-4">
@@ -108,51 +100,86 @@ export function ProfileView({
                 {profile.tier ? <Badge variant="secondary">{startCase(profile.tier)}</Badge> : null}
                 {profile.anchor ? <Badge variant="outline">Anchor</Badge> : null}
               </div>
-              <CardDescription>{shortenAddress(profile.address)}</CardDescription>
+              <CardDescription>
+                <HexValue value={profile.address} textClassName="text-sm text-muted-foreground" />
+              </CardDescription>
             </div>
-            <Badge variant="secondary">{profile.poolCount} pools</Badge>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">{profile.poolCount} pools</Badge>
+              <Badge variant="secondary">{profile.positionCount} positions</Badge>
+            </div>
           </div>
           <div className="grid gap-4 xl:grid-cols-3">
-            <GroupedMetricsCard
-              title="Exposure"
-              description="Position footprint and live market exposure for your wallet."
-              metrics={[
-                { label: "Positions", value: String(profile.positionCount), tooltip: PROFILE_METRICS.positions },
-                { label: "Active", value: String(profile.activePositionCount), tooltip: PROFILE_METRICS.active },
-                { label: "Liquidity", value: liquidityParts.primary, detail: liquidityParts.secondary, tooltip: PROFILE_METRICS.liquidity },
-                { label: "Active liquidity", value: activeLiquidityParts.primary, detail: activeLiquidityParts.secondary, tooltip: PROFILE_METRICS.activeLiquidity },
-              ]}
+            <SimpleProfileCard
+              title="Positions"
+              value={`${profile.activePositionCount} / ${profile.positionCount}`}
+              note="Active positions out of total tracked positions."
+              tooltip={PROFILE_METRICS.positions}
             />
-            <GroupedMetricsCard
-              title="Balances & outcome"
-              description="Wallet balances, fees, and aggregate result."
-              metrics={[
-                { label: "Net PnL", value: pnlParts.primary, detail: pnlParts.secondary, tooltip: PROFILE_METRICS.netPnl, positive: profile.totalPnl >= 0n },
-                { label: "USD balance", value: seededUsdParts?.primary ?? "N/A", detail: seededUsdParts?.secondary ?? null, tooltip: PROFILE_METRICS.usdBalance },
-                { label: "ETH balance", value: seededEthParts?.primary ?? "N/A", detail: seededEthParts?.secondary ?? null, tooltip: PROFILE_METRICS.ethBalance },
-                { label: "Fee capture", value: feeCaptureParts.primary, detail: feeCaptureParts.secondary, tooltip: PROFILE_METRICS.feeCapture },
-              ]}
+            <SimpleProfileCard
+              title="Liquidity active"
+              value={liquidityActivePercent}
+              note={`${formatAmount(profile.totalActiveLiquidity)} active of ${formatAmount(profile.totalLiquidity)} total liquidity.`}
+              tooltip={PROFILE_METRICS.liquidityActive}
             />
-            <GroupedMetricsCard
-              title="Trading activity"
-              description="How much flow your positions absorbed during the scenario."
-              metrics={[
-                { label: "Lifetime flow", value: lifetimeFlowParts.primary, detail: lifetimeFlowParts.secondary, tooltip: PROFILE_METRICS.lifetimeFlow },
-                { label: "Active flow", value: activeFlowParts.primary, detail: activeFlowParts.secondary, tooltip: PROFILE_METRICS.activeFlow },
-                { label: "Planned positions", value: profile.plannedPositions === null ? "N/A" : String(profile.plannedPositions), tooltip: PROFILE_METRICS.plannedPositions },
-                { label: "Exposure", value: `${profile.poolCount} pools`, tooltip: PROFILE_METRICS.exposure },
-              ]}
+            <SimpleProfileCard
+              title="Net PnL"
+              value={pnlParts.primary}
+              detail={pnlParts.secondary}
+              note="Aggregate profit and loss across all tracked positions."
+              tooltip={PROFILE_METRICS.netPnl}
+              positive={profile.totalPnl >= 0n}
             />
           </div>
         </CardHeader>
       </Card>
 
-      <ProfilePoolsBoard profile={profile} />
+      <ProfilePoolsBoard profile={profile} poolsById={poolsById} onOpenPoolDetails={onOpenPoolDetails} />
     </div>
   );
 }
 
-function ProfilePoolsBoard({ profile }: { profile: LpSummary }) {
+function SimpleProfileCard({
+  title,
+  value,
+  note,
+  tooltip,
+  detail,
+  positive,
+}: {
+  title: string;
+  value: string;
+  note: string;
+  tooltip: string;
+  detail?: string | null;
+  positive?: boolean;
+}) {
+  return (
+    <Card className="border-border/60 bg-background/70 shadow-none">
+      <CardHeader className="gap-3 pb-4">
+        <MetricLabel label={title} tooltip={tooltip} className="text-xs uppercase tracking-[0.18em]" />
+        <CardTitle className={cn(
+          "text-3xl tracking-[-0.04em]",
+          positive === undefined ? "" : positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+        )}>
+          {value}
+        </CardTitle>
+        {detail ? <div className="text-sm text-muted-foreground">{detail}</div> : null}
+        <CardDescription>{note}</CardDescription>
+      </CardHeader>
+    </Card>
+  );
+}
+
+function ProfilePoolsBoard({
+  profile,
+  poolsById,
+  onOpenPoolDetails,
+}: {
+  profile: LpSummary;
+  poolsById: Map<string, PoolSummary>;
+  onOpenPoolDetails: (poolId: string) => void;
+}) {
   const [expandedPoolId, setExpandedPoolId] = useState<string | null>(profile.groups[0]?.poolId ?? null);
 
   return (
@@ -166,11 +193,10 @@ function ProfilePoolsBoard({ profile }: { profile: LpSummary }) {
           {profile.groups.map((group) => {
             const isExpanded = expandedPoolId === group.poolId;
             const detailId = `profile-pool-${group.poolId}`;
-            const liquidityParts = formatAmountParts(group.totalLiquidity);
-            const feeParts = formatAmountParts(group.totalFees);
             const pnlParts = formatSignedAmountParts(group.totalPnl);
-            const activeLiquidityParts = formatAmountParts(group.totalActiveLiquidity);
-            const lifetimeFlowParts = formatCompactTokenPair("USD", group.totalLifetimeSwapVolume0, "ETH", group.totalLifetimeSwapVolume1);
+            const token0InvestedParts = formatAmountParts(group.totalPrincipal0);
+            const token1InvestedParts = formatAmountParts(group.totalPrincipal1);
+            const pool = poolsById.get(group.poolId) ?? null;
 
             return (
               <div key={group.poolId} className="border-t border-border/60 first:border-t-0">
@@ -182,12 +208,12 @@ function ProfilePoolsBoard({ profile }: { profile: LpSummary }) {
                     </div>
                   </div>
                   <div>
-                    <MetricLabel label="Liquidity" tooltip={PROFILE_GROUP_ROW_METRICS.liquidity} className="text-xs uppercase tracking-[0.16em]" />
-                    <div className="mt-1 font-medium">{liquidityParts.primary}</div>
+                    <MetricLabel label="USD invested" tooltip={PROFILE_GROUP_ROW_METRICS.token0Invested} className="text-xs uppercase tracking-[0.16em]" />
+                    <div className="mt-1 font-medium">{token0InvestedParts.primary}</div>
                   </div>
                   <div>
-                    <MetricLabel label="Fees" tooltip={PROFILE_GROUP_ROW_METRICS.fees} className="text-xs uppercase tracking-[0.16em]" />
-                    <div className="mt-1 font-medium">{feeParts.primary}</div>
+                    <MetricLabel label="ETH invested" tooltip={PROFILE_GROUP_ROW_METRICS.token1Invested} className="text-xs uppercase tracking-[0.16em]" />
+                    <div className="mt-1 font-medium">{token1InvestedParts.primary}</div>
                   </div>
                   <div>
                     <MetricLabel label="PnL" tooltip={PROFILE_GROUP_ROW_METRICS.pnl} className="text-xs uppercase tracking-[0.16em]" />
@@ -215,35 +241,62 @@ function ProfilePoolsBoard({ profile }: { profile: LpSummary }) {
                 {isExpanded ? (
                   <div id={detailId} className="border-t border-border/60 bg-muted/20 px-6 py-5">
                     <div className="mx-auto max-w-5xl">
-                      <div className="grid gap-4 xl:grid-cols-3">
-                        <GroupedMetricsCard
-                          title="Pool config"
-                          description="Pool settings for this slice of your profile."
-                          metrics={[
-                            { label: "Fee tier", value: formatFeeTier(group.fee), tooltip: PROFILE_GROUP_DETAIL_METRICS.feeTier },
-                            { label: "Tick spacing", value: String(group.tickSpacing), tooltip: PROFILE_GROUP_DETAIL_METRICS.tickSpacing },
-                          ]}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="text-base font-semibold">{pool?.tokenPair ?? profile.label}</div>
+                          <div className="text-sm text-muted-foreground">{group.poolLabel}</div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="gap-2 self-start"
+                          onClick={() => onOpenPoolDetails(group.poolId)}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Pools view
+                        </Button>
+                      </div>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <ProfilePoolMetricCard
+                          title="Utilisation"
+                          tooltip={PROFILE_GROUP_DETAIL_METRICS.utilization}
+                          value={pool ? formatBps(pool.liquidityUtilisationBps) : "N/A"}
+                          detail={pool ? `peak ${formatBps(pool.peakLiquidityUtilisationBps)}` : null}
+                          note="Current and peak in-range liquidity share for this pool."
+                          icon={Droplets}
+                          emphasize={Boolean(pool && pool.activeLiquidity > 0n)}
                         />
-                        <GroupedMetricsCard
-                          title="Liquidity & outcome"
-                          description="Liquidity, fees, and result for your positions in this pool."
-                          metrics={[
-                            { label: "Liquidity", value: liquidityParts.primary, detail: liquidityParts.secondary, tooltip: PROFILE_GROUP_DETAIL_METRICS.liquidity },
-                            { label: "Active liquidity", value: activeLiquidityParts.primary, detail: activeLiquidityParts.secondary, tooltip: PROFILE_GROUP_DETAIL_METRICS.activeLiquidity },
-                            { label: "Fees", value: feeParts.primary, detail: feeParts.secondary, tooltip: PROFILE_GROUP_DETAIL_METRICS.fees },
-                            { label: "PnL", value: pnlParts.primary, detail: pnlParts.secondary, tooltip: PROFILE_GROUP_DETAIL_METRICS.pnl, positive: group.totalPnl >= 0n },
-                          ]}
+                        <ProfilePoolMetricCard
+                          title="LPs"
+                          tooltip={PROFILE_GROUP_DETAIL_METRICS.lps}
+                          value={pool ? `${pool.activeLpCount}/${pool.lifetimeLpCount}` : "N/A"}
+                          detail={pool ? `${formatBps(pool.lpRetentionBps)} retained` : null}
+                          note="Active LP wallets relative to lifetime pool participation."
+                          icon={Users}
                         />
-                        <GroupedMetricsCard
-                          title="Trading activity"
-                          description="Lifetime swap flow experienced by your positions in this pool."
-                          metrics={[
-                            { label: "Lifetime flow", value: lifetimeFlowParts.primary, detail: lifetimeFlowParts.secondary, tooltip: PROFILE_GROUP_DETAIL_METRICS.lifetimeFlow },
-                          ]}
+                        <ProfilePoolMetricCard
+                          title="Positions"
+                          tooltip={PROFILE_GROUP_DETAIL_METRICS.positions}
+                          value={pool ? `${pool.activePositionCount}/${pool.totalPositionCount}` : "N/A"}
+                          detail={pool ? `${formatBps(pool.activePositionPercentageBps)} active` : null}
+                          note="Active positions relative to all seeded positions in the pool."
+                          icon={Activity}
+                        />
+                        <ProfilePoolMetricCard
+                          title="Trade flow"
+                          tooltip={PROFILE_GROUP_DETAIL_METRICS.tradeFlow}
+                          value={pool ? String(pool.totalSwapCount) : "N/A"}
+                          detail={pool ? `${pool.zeroToOneSwapCount}:${pool.oneToZeroSwapCount} direction` : null}
+                          note="Seeded swaps executed against this pool and their direction split."
+                          icon={ArrowRightLeft}
                         />
                       </div>
                       <div className="mt-4">
-                        <ProfilePositionsBoard positions={group.positions} groupKey={`profile-${profile.address}-${group.poolId}`} />
+                        <ProfilePositionsBoard
+                          positions={group.positions}
+                          groupKey={`profile-${profile.address}-${group.poolId}`}
+                          token0Symbol={pool?.token0Symbol ?? "Token 0"}
+                          token1Symbol={pool?.token1Symbol ?? "Token 1"}
+                        />
                       </div>
                     </div>
                   </div>
@@ -257,12 +310,54 @@ function ProfilePoolsBoard({ profile }: { profile: LpSummary }) {
   );
 }
 
+function ProfilePoolMetricCard({
+  title,
+  tooltip,
+  value,
+  detail,
+  note,
+  icon: Icon,
+  emphasize = false,
+}: {
+  title: string;
+  tooltip: string;
+  value: string;
+  detail?: string | null;
+  note: string;
+  icon: React.ComponentType<{ className?: string }>;
+  emphasize?: boolean;
+}) {
+  return (
+    <Card className="border-border/60 bg-background/70 shadow-none">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0">
+        <div>
+          <CardDescription className="uppercase tracking-[0.14em]">
+            <MetricLabel label={title} tooltip={tooltip} />
+          </CardDescription>
+          <CardTitle className={cn("mt-2 text-2xl tracking-[-0.03em]", emphasize ? "text-emerald-600 dark:text-emerald-400" : "")}>
+            {value}
+          </CardTitle>
+          {detail ? <div className="mt-1 text-sm text-muted-foreground">{detail}</div> : null}
+        </div>
+        <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">{note}</CardContent>
+    </Card>
+  );
+}
+
 function ProfilePositionsBoard({
   positions,
   groupKey,
+  token0Symbol,
+  token1Symbol,
 }: {
   positions: LpSummary["groups"][number]["positions"];
   groupKey: string;
+  token0Symbol: string;
+  token1Symbol: string;
 }) {
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(positions[0]?.positionId ?? null);
 
@@ -271,24 +366,26 @@ function ProfilePositionsBoard({
       {positions.map((position) => {
         const isExpanded = expandedPositionId === position.positionId;
         const detailId = `${groupKey}-${position.positionId}`;
-        const activeLiquidityParts = formatAmountParts(position.activeLiquidity);
-        const totalLiquidityParts = formatAmountParts(position.liquidity);
-        const feeParts = formatAmountParts(position.fees);
-        const lifetimeFlowParts = formatCompactTokenPair("USD", position.lifetimeSwapVolume0, "ETH", position.lifetimeSwapVolume1);
-        const activeFlowParts = formatCompactTokenPair("USD", position.activeSwapVolume0, "ETH", position.activeSwapVolume1);
-        const principalParts = formatCompactTokenPair("USD", position.principalAmount0, "ETH", position.principalAmount1);
-        const currentParts = formatCompactTokenPair("USD", position.currentAmount0, "ETH", position.currentAmount1);
-        const pnlParts = formatCompactTokenPair("USD", position.netPnl0, "ETH", position.netPnl1);
-        const feeTokenParts = formatCompactTokenPair("USD", position.feeAccumulated0, "ETH", position.feeAccumulated1);
+        const token0InvestedParts = formatAmountParts(position.principalAmount0);
+        const token1InvestedParts = formatAmountParts(position.principalAmount1);
+        const currentToken0Parts = formatAmountParts(position.currentAmount0);
+        const currentToken1Parts = formatAmountParts(position.currentAmount1);
+        const feesToken0Parts = formatAmountParts(position.feeAccumulated0);
+        const feesToken1Parts = formatAmountParts(position.feeAccumulated1);
+        const activeLiquidityShare = formatRatioPercent(position.activeLiquidity, position.liquidity);
+        const activeSwapVolume0Share = formatRatioPercent(position.activeSwapVolume0, position.lifetimeSwapVolume0);
+        const activeSwapVolume1Share = formatRatioPercent(position.activeSwapVolume1, position.lifetimeSwapVolume1);
+        const formattedAge = formatDuration(position.age);
+        const shortPositionId = shortenHash(position.positionId);
 
         return (
           <div key={position.positionId} className="overflow-hidden rounded-2xl border border-border/60 bg-card/75">
-            <div className="grid items-center gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.4fr)_minmax(140px,0.7fr)_minmax(120px,0.5fr)_minmax(120px,0.5fr)_40px]">
+            <div className="grid items-center gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(140px,0.95fr)_minmax(120px,0.7fr)_minmax(140px,0.8fr)_minmax(140px,0.8fr)_minmax(140px,0.8fr)_40px]">
               <div>
-                <div className="font-medium">
-                  Range [{position.tickLower}, {position.tickUpper}]
+                <MetricLabel label="Position" tooltip={POSITION_ROW_METRICS.identifier} className="text-xs uppercase tracking-[0.16em]" />
+                <div className="mt-1">
+                  <HexValue value={position.positionId} prefix="Pos" textClassName="text-sm font-medium" />
                 </div>
-                <div className="mt-1 font-mono text-xs text-muted-foreground">{shortenHash(position.positionId)}</div>
               </div>
               <div>
                 <MetricLabel label="Status" tooltip={POSITION_ROW_METRICS.status} className="text-xs uppercase tracking-[0.16em]" />
@@ -299,11 +396,17 @@ function ProfilePositionsBoard({
                 </div>
               </div>
               <div>
-                <MetricLabel label="Liquidity" tooltip={POSITION_ROW_METRICS.liquidity} className="text-xs uppercase tracking-[0.16em]" />
-                <div className="mt-1 font-medium">{formatAmount(position.liquidity)}</div>
+                <MetricLabel label={`${token0Symbol} invested`} tooltip={POSITION_ROW_METRICS.token0Invested} className="text-xs uppercase tracking-[0.16em]" />
+                <div className="mt-1 font-medium">{token0InvestedParts.primary}</div>
+                {token0InvestedParts.secondary ? <div className="text-xs text-muted-foreground">{token0InvestedParts.secondary}</div> : null}
               </div>
               <div>
-                <MetricLabel label="PnL" tooltip={POSITION_ROW_METRICS.pnl} className="text-xs uppercase tracking-[0.16em]" />
+                <MetricLabel label={`${token1Symbol} invested`} tooltip={POSITION_ROW_METRICS.token1Invested} className="text-xs uppercase tracking-[0.16em]" />
+                <div className="mt-1 font-medium">{token1InvestedParts.primary}</div>
+                {token1InvestedParts.secondary ? <div className="text-xs text-muted-foreground">{token1InvestedParts.secondary}</div> : null}
+              </div>
+              <div>
+                <MetricLabel label="Current PnL" tooltip={POSITION_ROW_METRICS.pnl} className="text-xs uppercase tracking-[0.16em]" />
                 <PnlValue value={formatSignedAmount(position.netPnl)} positive={position.netPnl >= 0n} className="mt-1 font-medium" />
               </div>
               <div className="text-right">
@@ -311,7 +414,7 @@ function ProfilePositionsBoard({
                   type="button"
                   aria-expanded={isExpanded}
                   aria-controls={detailId}
-                  aria-label={`${isExpanded ? "Collapse" : "Expand"} position ${shortenHash(position.positionId)}`}
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} position ${shortPositionId}`}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-background/70 text-muted-foreground transition hover:bg-accent hover:text-foreground"
                   onClick={() => setExpandedPositionId(isExpanded ? null : position.positionId)}
                 >
@@ -321,44 +424,39 @@ function ProfilePositionsBoard({
             </div>
             {isExpanded ? (
               <div id={detailId} className="border-t border-border/60 bg-background/55 px-4 py-4">
-                <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 xl:grid-cols-3">
                   <GroupedMetricsCard
-                    title="Range & liquidity"
-                    description="How this position is configured and how much of it is active."
+                    title="Position config"
+                    description="Basic position metadata, range definition, and creation context."
                     metrics={[
-                      { label: "Position ID", value: shortenHash(position.positionId), tooltip: POSITION_DETAIL_METRICS.positionId, mono: true },
+                      { label: "Position ID", value: <HexValue value={position.positionId} textClassName="text-xs" />, tooltip: POSITION_DETAIL_METRICS.positionId, mono: true },
+                      { label: "Range", value: `[${position.tickLower}, ${position.tickUpper}]`, tooltip: POSITION_DETAIL_METRICS.range, mono: true },
                       { label: "Range width", value: String(position.tickUpper - position.tickLower), tooltip: POSITION_DETAIL_METRICS.rangeWidth },
-                      { label: "Active liquidity", value: activeLiquidityParts.primary, detail: activeLiquidityParts.secondary, tooltip: POSITION_DETAIL_METRICS.activeLiquidity },
-                      { label: "Total liquidity", value: totalLiquidityParts.primary, detail: totalLiquidityParts.secondary, tooltip: POSITION_DETAIL_METRICS.totalLiquidity },
+                      { label: "Status", value: position.active ? "Active" : "Inactive", tooltip: POSITION_DETAIL_METRICS.status },
+                      { label: "Created", value: formatTimestamp(position.createdTimestamp), detail: `Block ${formatBlock(position.createdBlock)}`, tooltip: POSITION_DETAIL_METRICS.created },
+                      { label: "Position age", value: formattedAge, detail: `${position.age}s`, tooltip: POSITION_DETAIL_METRICS.age },
                     ]}
                   />
                   <GroupedMetricsCard
-                    title="Holdings & outcome"
-                    description="Principal, current amounts, and position-level result."
+                    title="Position stats"
+                    description="Initial and current balances plus fees accrued for each pool token."
                     metrics={[
-                      { label: "Fees accrued", value: feeParts.primary, detail: feeParts.secondary, tooltip: POSITION_DETAIL_METRICS.feesAccrued },
-                      { label: "Principal", value: principalParts.primary, detail: principalParts.secondary, tooltip: POSITION_DETAIL_METRICS.principal },
-                      { label: "Current amounts", value: currentParts.primary, detail: currentParts.secondary, tooltip: POSITION_DETAIL_METRICS.currentAmounts },
-                      { label: "Token PnL", value: pnlParts.primary, detail: pnlParts.secondary, tooltip: POSITION_DETAIL_METRICS.tokenPnl, positive: position.netPnl >= 0n },
+                      { label: `${token0Symbol} initial`, value: token0InvestedParts.primary, detail: token0InvestedParts.secondary, tooltip: POSITION_DETAIL_METRICS.initialToken0 },
+                      { label: `${token1Symbol} initial`, value: token1InvestedParts.primary, detail: token1InvestedParts.secondary, tooltip: POSITION_DETAIL_METRICS.initialToken1 },
+                      { label: `${token0Symbol} current`, value: currentToken0Parts.primary, detail: currentToken0Parts.secondary, tooltip: POSITION_DETAIL_METRICS.currentToken0 },
+                      { label: `${token1Symbol} current`, value: currentToken1Parts.primary, detail: currentToken1Parts.secondary, tooltip: POSITION_DETAIL_METRICS.currentToken1 },
+                      { label: `${token0Symbol} fees`, value: feesToken0Parts.primary, detail: feesToken0Parts.secondary, tooltip: POSITION_DETAIL_METRICS.feesToken0 },
+                      { label: `${token1Symbol} fees`, value: feesToken1Parts.primary, detail: feesToken1Parts.secondary, tooltip: POSITION_DETAIL_METRICS.feesToken1 },
                     ]}
                   />
                   <GroupedMetricsCard
-                    title="Flow & fees"
-                    description="Swap volume and fee accrual experienced by this position."
+                    title="Position performance"
+                    description="How active this position stayed and the resulting aggregate outcome."
                     metrics={[
-                      { label: "Active swap flow", value: activeFlowParts.primary, detail: activeFlowParts.secondary, tooltip: POSITION_DETAIL_METRICS.activeSwapFlow },
-                      { label: "Lifetime swap flow", value: lifetimeFlowParts.primary, detail: lifetimeFlowParts.secondary, tooltip: POSITION_DETAIL_METRICS.lifetimeSwapFlow },
-                      { label: "Token fees", value: feeTokenParts.primary, detail: feeTokenParts.secondary, tooltip: POSITION_DETAIL_METRICS.tokenFees },
-                    ]}
-                  />
-                  <GroupedMetricsCard
-                    title="Ownership & timing"
-                    description="Who owns the position and when it changed."
-                    metrics={[
-                      { label: "Owner", value: shortenAddress(position.owner), tooltip: POSITION_DETAIL_METRICS.owner },
-                      { label: "Core owner", value: shortenAddress(position.coreOwner), tooltip: POSITION_DETAIL_METRICS.coreOwner },
-                      { label: "Created", value: `Block ${formatBlock(position.createdBlock)}`, detail: formatTimestamp(position.createdTimestamp), tooltip: POSITION_DETAIL_METRICS.created },
-                      { label: "Updated", value: `Block ${formatBlock(position.updatedBlock)}`, detail: formatTimestamp(position.updatedTimestamp), tooltip: POSITION_DETAIL_METRICS.updated },
+                      { label: "Active liquidity", value: activeLiquidityShare, detail: `${formatAmount(position.activeLiquidity)} of ${formatAmount(position.liquidity)}`, tooltip: POSITION_DETAIL_METRICS.activeLiquidityShare },
+                      { label: `${token0Symbol} active swap volume`, value: activeSwapVolume0Share, detail: `${formatAmount(position.activeSwapVolume0)} of ${formatAmount(position.lifetimeSwapVolume0)}`, tooltip: POSITION_DETAIL_METRICS.activeSwapVolume0Share },
+                      { label: `${token1Symbol} active swap volume`, value: activeSwapVolume1Share, detail: `${formatAmount(position.activeSwapVolume1)} of ${formatAmount(position.lifetimeSwapVolume1)}`, tooltip: POSITION_DETAIL_METRICS.activeSwapVolume1Share },
+                      { label: "Net PnL", value: formatSignedAmount(position.netPnl), detail: formatCompactTokenPair(token0Symbol, position.netPnl0, token1Symbol, position.netPnl1).primary, tooltip: POSITION_DETAIL_METRICS.netPnl, positive: position.netPnl >= 0n },
                     ]}
                   />
                 </div>
@@ -369,4 +467,20 @@ function ProfilePositionsBoard({
       })}
     </div>
   );
+}
+
+function formatDuration(seconds: number) {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  if (seconds < 3_600) {
+    return `${Math.floor(seconds / 60)}m`;
+  }
+
+  if (seconds < 86_400) {
+    return `${Math.floor(seconds / 3_600)}h`;
+  }
+
+  return `${Math.floor(seconds / 86_400)}d`;
 }

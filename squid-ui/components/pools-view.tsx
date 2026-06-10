@@ -5,10 +5,11 @@ import { Activity, ArrowRightLeft, ChevronDown, CircleHelp, Droplets, Users } fr
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { HexValue } from "@/components/ui/hex-value";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { PoolSummary } from "@/lib/dashboard";
-import { cn, formatAmountParts, formatBps, formatFeeTier, formatTick, shortenHash } from "@/lib/utils";
+import { cn, formatBps, formatCompactTokenPair, formatFeeTier, formatTick } from "@/lib/utils";
 
 const SUMMARY_METRICS = {
   utilization: "Share of total liquidity currently active at the pool's final tick, with the peak share shown for comparison.",
@@ -30,20 +31,30 @@ const DETAIL_METRICS = {
   tickSpacing: "Minimum spacing allowed between initialized ticks in this pool.",
   lpFee: "The LP-facing fee currently applied by the pool state.",
   protocolFee: "The protocol-owned fee currently configured on the pool state.",
-  currentLiquidityUtilisation: "Share of total liquidity that is currently active at the pool's final tick.",
-  peakLiquidityUtilisation: "Highest share of total liquidity that was active at any point in the seeded scenario.",
+  initialAmounts: "Token0 and token1 amounts first recorded when this pool became funded in the seeded scenario.",
+  currentAmounts: "Token0 and token1 amounts tracked at the pool's final seeded state.",
+  totalFeesAccrued: "Lifetime token0 and token1 fees accrued by the pool metrics during seeded liquidity updates.",
   totalSwapCount: "Total number of seeded swaps executed against this pool.",
   zeroToOneSwaps: "Number of seeded swaps that moved from token0 into token1.",
   oneToZeroSwaps: "Number of seeded swaps that moved from token1 into token0.",
-  flowSkewness: "Directional skew of seeded order flow based on the balance between zero-to-one and one-to-zero swaps.",
   activeLps: "Number of LP wallets with at least one active position at the final tick.",
   lpRetention: "Share of lifetime LP wallets that still have an active position in range.",
   activePositions: "Number of positions currently in range, with total seeded positions shown below.",
   positionActivity: "Share of seeded positions that remain active at the final tick.",
 } as const;
 
-export function PoolsView({ pools }: { pools: PoolSummary[] }) {
-  const [expandedPoolId, setExpandedPoolId] = useState<string | null>(pools[0]?.poolId ?? null);
+export function PoolsView({
+  pools,
+  expandedPoolId: controlledExpandedPoolId,
+  onExpandedPoolChange,
+}: {
+  pools: PoolSummary[];
+  expandedPoolId?: string | null;
+  onExpandedPoolChange?: (poolId: string | null) => void;
+}) {
+  const [uncontrolledExpandedPoolId, setUncontrolledExpandedPoolId] = useState<string | null>(pools[0]?.poolId ?? null);
+  const expandedPoolId = controlledExpandedPoolId === undefined ? uncontrolledExpandedPoolId : controlledExpandedPoolId;
+  const setExpandedPoolId = onExpandedPoolChange ?? setUncontrolledExpandedPoolId;
   const activePools = pools.filter((pool) => pool.activePositionCount > 0).length;
   const averageLiquidityUtilisationBps = averageBps(pools.map((pool) => pool.liquidityUtilisationBps));
   const averagePeakLiquidityUtilisationBps = averageBps(pools.map((pool) => pool.peakLiquidityUtilisationBps));
@@ -115,6 +126,24 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                 {pools.map((pool) => {
                   const isExpanded = expandedPoolId === pool.poolId;
                   const detailId = `pool-detail-${pool.poolId}`;
+                  const initialAmounts = formatCompactTokenPair(
+                    pool.token0Symbol,
+                    pool.initialToken0Amount,
+                    pool.token1Symbol,
+                    pool.initialToken1Amount,
+                  );
+                  const currentAmounts = formatCompactTokenPair(
+                    pool.token0Symbol,
+                    pool.currentToken0Amount,
+                    pool.token1Symbol,
+                    pool.currentToken1Amount,
+                  );
+                  const totalFeesAccrued = formatCompactTokenPair(
+                    pool.token0Symbol,
+                    pool.totalFeeAccruedToken0,
+                    pool.token1Symbol,
+                    pool.totalFeeAccruedToken1,
+                  );
 
                   return (
                     <Fragment key={pool.poolId}>
@@ -123,7 +152,7 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                           <div className="min-w-52">
                             <div className="font-semibold">{pool.tokenPair}</div>
                             <div className="mt-1 text-xs text-muted-foreground">{pool.poolLabel}</div>
-                            <div className="mt-2 font-mono text-[11px] text-muted-foreground">{shortenHash(pool.poolId)}</div>
+                            <HexValue value={pool.poolId} className="mt-2" textClassName="text-[11px] text-muted-foreground" />
                           </div>
                         </TableCell>
                         <TableCell>
@@ -181,17 +210,25 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                                   />
                                   <GroupedMetricsCard
                                     title="Liquidity & order flow"
-                                    description="Liquidity utilisation and directional swap activity for this pool."
+                                    description="Tracked pool amounts, accrued fees, and directional swap activity for this pool."
                                     metrics={[
                                       {
-                                        label: "Current liquidity utilisation",
-                                        value: formatBps(pool.liquidityUtilisationBps),
-                                        tooltip: DETAIL_METRICS.currentLiquidityUtilisation,
+                                        label: "Initial amounts",
+                                        value: initialAmounts.primary,
+                                        detail: initialAmounts.secondary,
+                                        tooltip: DETAIL_METRICS.initialAmounts,
                                       },
                                       {
-                                        label: "Peak liquidity utilisation",
-                                        value: formatBps(pool.peakLiquidityUtilisationBps),
-                                        tooltip: DETAIL_METRICS.peakLiquidityUtilisation,
+                                        label: "Current amounts",
+                                        value: currentAmounts.primary,
+                                        detail: currentAmounts.secondary,
+                                        tooltip: DETAIL_METRICS.currentAmounts,
+                                      },
+                                      {
+                                        label: "Total fees accrued",
+                                        value: totalFeesAccrued.primary,
+                                        detail: totalFeesAccrued.secondary,
+                                        tooltip: DETAIL_METRICS.totalFeesAccrued,
                                       },
                                       {
                                         label: "Total swap count",
@@ -207,11 +244,6 @@ export function PoolsView({ pools }: { pools: PoolSummary[] }) {
                                         label: "One to zero swaps",
                                         value: String(pool.oneToZeroSwapCount),
                                         tooltip: DETAIL_METRICS.oneToZeroSwaps,
-                                      },
-                                      {
-                                        label: "Flow skewness",
-                                        value: formatBps(pool.flowSkewnessBps),
-                                        tooltip: DETAIL_METRICS.flowSkewness,
                                       },
                                     ]}
                                   />
@@ -310,7 +342,7 @@ function GroupedMetricsCard({
   description: string;
   metrics: Array<{
     label: string;
-    value: string;
+    value: React.ReactNode;
     detail?: string | null;
     tooltip: string;
     mono?: boolean;
@@ -339,7 +371,7 @@ function StatLine({
   mono = false,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   detail?: string | null;
   tooltip: string;
   mono?: boolean;

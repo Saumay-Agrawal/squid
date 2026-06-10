@@ -4,8 +4,9 @@ import { ChevronDown, Wallet } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { HexValue } from "@/components/ui/hex-value";
 import type { KnownAddress } from "@/lib/dashboard";
-import { shortenAddress, startCase } from "@/lib/utils";
+import { startCase } from "@/lib/utils";
 
 export function ConnectWallet({
   addresses,
@@ -46,7 +47,7 @@ export function ConnectWallet({
                   {entry.label}
                   {entry.tier ? <span className="ml-2 text-xs text-muted-foreground">{startCase(entry.tier)}</span> : null}
                 </div>
-                <div className="font-mono text-xs text-muted-foreground">{shortenAddress(entry.address)}</div>
+                <HexValue value={entry.address} textClassName="text-xs text-muted-foreground" />
               </div>
               {entry.address === selectedAddress ? <span className="text-xs text-primary">Selected</span> : null}
             </button>

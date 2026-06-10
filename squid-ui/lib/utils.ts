@@ -24,13 +24,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function shortenHex(value?: string) {
+  if (!value) return "N/A";
+  if (value.length <= 8) return value;
+  return `${value.slice(0, 5)}...${value.slice(-3)}`;
+}
+
 export function shortenAddress(value?: string) {
   if (!value) return "No wallet";
-  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+  return shortenHex(value);
 }
 
 export function shortenHash(value: string) {
-  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+  return shortenHex(value);
 }
 
 export function formatTick(value: number) {
@@ -43,6 +49,15 @@ export function formatFeeTier(value: number) {
 
 export function formatBps(value: number) {
   return `${(value / 100).toFixed(2)}%`;
+}
+
+export function formatRatioPercent(numerator: bigint, denominator: bigint) {
+  if (denominator === 0n) {
+    return "0.00%";
+  }
+
+  const basisPoints = Number((numerator * 10_000n) / denominator);
+  return formatBps(basisPoints);
 }
 
 export function formatAmount(value: bigint) {
@@ -98,6 +113,18 @@ export function formatCompactTokenPair(label0: string, value0: bigint, label1: s
         ? `${label0} ${left.secondary ?? left.primary} / ${label1} ${right.secondary ?? right.primary}`
         : null,
   };
+}
+
+export function formatTokenBalance(value: bigint, decimals: number) {
+  const negative = value < 0n;
+  const absolute = negative ? -value : value;
+  const base = 10n ** BigInt(decimals);
+  const whole = absolute / base;
+  const fraction = (absolute % base).toString().padStart(decimals, "0").slice(0, 4).replace(/0+$/, "");
+  const wholeText = whole.toLocaleString("en-US");
+  const sign = negative ? "-" : "";
+
+  return fraction ? `${sign}${wholeText}.${fraction}` : `${sign}${wholeText}`;
 }
 
 export function formatBlock(value: number) {
