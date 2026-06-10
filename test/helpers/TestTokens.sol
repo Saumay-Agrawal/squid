@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 contract BaseTestToken {
     string public name;
-    uint8 public immutable DECIMALS = 18;
     uint256 public totalSupply;
 
     mapping(address => uint256) public balanceOf;
@@ -11,6 +10,10 @@ contract BaseTestToken {
 
     constructor(string memory _name) {
         name = _name;
+    }
+
+    function decimals() public pure virtual returns (uint8) {
+        return 18;
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {
@@ -39,7 +42,7 @@ contract BaseTestToken {
         return true;
     }
 
-    function mint(address to, uint256 amount) external {
+    function mint(address to, uint256 amount) external virtual {
         totalSupply += amount;
         unchecked {
             balanceOf[to] += amount;
@@ -81,4 +84,31 @@ contract RevertingSymbolToken is BaseTestToken {
 
 contract MissingSymbolToken is BaseTestToken {
     constructor(string memory _name) BaseTestToken(_name) {}
+}
+
+contract MockUSDC is BaseTestToken {
+    address public immutable minter;
+
+    error UnauthorizedMinter(address caller);
+
+    constructor(address _minter) BaseTestToken("Mock USD Coin") {
+        minter = _minter;
+    }
+
+    function symbol() external pure returns (string memory) {
+        return "USDC";
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external override {
+        if (msg.sender != minter) revert UnauthorizedMinter(msg.sender);
+
+        totalSupply += amount;
+        unchecked {
+            balanceOf[to] += amount;
+        }
+    }
 }

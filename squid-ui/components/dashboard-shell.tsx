@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/wallet/theme-toggle";
 import type { SquidDashboardData } from "@/lib/dashboard";
-import { cn, formatSignedAmountParts } from "@/lib/utils";
+import { cn, formatSignedTokenPairWithDecimals } from "@/lib/utils";
 
 type Section = "pools" | "lps" | "profile";
 
@@ -45,6 +45,14 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
 
   const activeAddress = data.knownAddresses.find((entry) => entry.address === selectedAddress) ?? null;
   const profile = data.lpSummaries.find((entry) => entry.address === selectedAddress) ?? null;
+  const token0 = {
+    symbol: data.market.token0Symbol,
+    decimals: data.market.token0Decimals,
+  };
+  const token1 = {
+    symbol: data.market.token1Symbol,
+    decimals: data.market.token1Decimals,
+  };
 
   function handleOpenPoolDetails(poolId: string) {
     setExpandedPoolId(poolId);
@@ -85,7 +93,7 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
             <CardHeader className="gap-4">
                 <div>
                   <CardTitle className="text-base">Workspace</CardTitle>
-                  <CardDescription>Navigate between market-wide pool health, the full LP roster, and the selected wallet.</CardDescription>
+                  <CardDescription>Navigate between market-wide pool health, the full LP roster, and the selected account.</CardDescription>
                 </div>
             </CardHeader>
             <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto">
@@ -100,31 +108,34 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
                 active={section === "lps"}
                 icon={ChartNoAxesColumn}
                 label="LPs"
-                meta={`${data.seedManifest.lpCount} seeded wallets`}
+                meta={`${data.seedManifest.lpCount} seeded LPs`}
                 onClick={() => setSection("lps")}
               />
               <SectionButton
                 active={section === "profile"}
                 icon={UserRound}
-                label="Your Profile"
-                meta={activeAddress ? activeAddress.label : "Choose a wallet"}
+                label="Account"
+                meta={activeAddress ? activeAddress.label : "Choose an account"}
                 onClick={() => setSection("profile")}
               />
 
               <div className="pt-3">
-                <SidebarContext section={section} profile={profile} data={data} />
+                <SidebarContext section={section} profile={profile} activeAddress={activeAddress} data={data} />
               </div>
             </CardContent>
           </Card>
         </aside>
 
         <main className="min-w-0 space-y-4">
-          {section === "pools" ? <PoolsView pools={data.poolSummaries} expandedPoolId={expandedPoolId} onExpandedPoolChange={setExpandedPoolId} /> : null}
-          {section === "lps" ? <LpsView lps={data.lpSummaries} selectedAddress={selectedAddress} /> : null}
+          {section === "pools" ? <PoolsView pools={data.poolSummaries} token0={token0} token1={token1} expandedPoolId={expandedPoolId} onExpandedPoolChange={setExpandedPoolId} /> : null}
+          {section === "lps" ? <LpsView lps={data.lpSummaries} selectedAddress={selectedAddress} token0={token0} token1={token1} /> : null}
           {section === "profile" ? (
             <ProfileView
+              account={activeAddress}
               lps={data.lpSummaries}
               pools={data.poolSummaries}
+              token0={token0}
+              token1={token1}
               selectedAddress={selectedAddress}
               selectedLabel={activeAddress?.label ?? null}
               onOpenPoolDetails={handleOpenPoolDetails}
@@ -176,13 +187,25 @@ function SectionButton({
 function SidebarContext({
   section,
   profile,
+  activeAddress,
   data,
 }: {
   section: Section;
   profile: SquidDashboardData["lpSummaries"][number] | null;
+  activeAddress: SquidDashboardData["knownAddresses"][number] | null;
   data: SquidDashboardData;
 }) {
-  const profilePnlParts = profile ? formatSignedAmountParts(profile.totalPnl) : null;
+  const token0 = {
+    symbol: data.market.token0Symbol,
+    decimals: data.market.token0Decimals,
+  };
+  const token1 = {
+    symbol: data.market.token1Symbol,
+    decimals: data.market.token1Decimals,
+  };
+  const profilePnlParts = profile
+    ? formatSignedTokenPairWithDecimals(token0, profile.totalNetPnl0, token1, profile.totalNetPnl1)
+    : null;
   const config =
     section === "pools"
       ? {
@@ -195,8 +218,8 @@ function SidebarContext({
       : section === "lps"
         ? {
             title: "LP roster",
-            note: `${data.seedManifest.swapCount} seeded swaps across ${data.seedManifest.lpCount} wallets, with token-level flow and PnL detail.`,
-            value: `${data.seedManifest.lpCount} wallets`,
+            note: `${data.seedManifest.swapCount} seeded swaps across ${data.seedManifest.lpCount} LP wallets, with token-level flow and PnL detail.`,
+            value: `${data.seedManifest.lpCount} LPs`,
             detail: null,
             positive: undefined,
           }
@@ -205,23 +228,37 @@ function SidebarContext({
   if (section === "profile") {
     return (
       <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
-        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected wallet</div>
+        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected account</div>
         <div className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">
-          {profile?.label ?? "No wallet"}
+          {activeAddress?.label ?? "No account"}
         </div>
         <div className="mt-1 text-sm text-muted-foreground">
-          {profile ? <HexValue value={profile.address} textClassName="text-sm text-muted-foreground" /> : "Choose a wallet to load token balances."}
+          {activeAddress ? <HexValue value={activeAddress.address} textClassName="text-sm text-muted-foreground" /> : "Choose an account to load token balances."}
         </div>
         <div className="mt-2 text-sm text-muted-foreground">
           {profile
             ? `${profile.activePositionCount} active positions across ${profile.poolCount} pools. Aggregate PnL ${profilePnlParts?.primary ?? "N/A"}.`
-            : "Choose a wallet to load token balances."}
+            : activeAddress
+              ? `${activeAddress.role === "trader" ? "Trader" : "Account"} seeded for ${data.market.basePair}${activeAddress.strategy ? ` with ${activeAddress.strategy} flow.` : "."}`
+              : "Choose an account to load token balances."}
         </div>
-        {profile ? (
+        {activeAddress ? (
           <SelectedWalletBalances
-            walletAddress={profile.address}
-            token0={{ address: data.market.token0, symbol: data.market.token0Symbol }}
-            token1={{ address: data.market.token1, symbol: data.market.token1Symbol }}
+            walletAddress={activeAddress.address}
+            token0={{
+              address: data.market.token0,
+              symbol: data.market.token0Symbol,
+              decimals: data.market.token0Decimals,
+              native: data.market.token0Native,
+            }}
+            token1={{
+              address: data.market.token1,
+              symbol: data.market.token1Symbol,
+              decimals: data.market.token1Decimals,
+              native: data.market.token1Native,
+            }}
+            seededToken0Balance={activeAddress.seededEthBalance}
+            seededToken1Balance={activeAddress.seededUsdcBalance}
           />
         ) : null}
         <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">

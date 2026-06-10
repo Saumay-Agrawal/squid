@@ -6,7 +6,7 @@ library TokenSymbolResolver {
     uint256 internal constant MAX_SYMBOL_LENGTH = 32;
 
     function resolve(address token) internal view returns (string memory) {
-        if (token == address(0)) return "NATIVE";
+        if (token == address(0)) return "ETH";
 
         (bool success, bytes memory data) = token.staticcall{gas: SYMBOL_CALL_GAS}(abi.encodeWithSignature("symbol()"));
         if (!success) return "UNKNOWN";

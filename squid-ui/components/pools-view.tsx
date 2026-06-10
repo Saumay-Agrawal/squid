@@ -9,7 +9,7 @@ import { HexValue } from "@/components/ui/hex-value";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { PoolSummary } from "@/lib/dashboard";
-import { cn, formatBps, formatCompactTokenPair, formatFeeTier, formatTick } from "@/lib/utils";
+import { cn, formatBps, formatFeeTier, formatTick, formatTokenPairWithDecimals, type TokenDisplayConfig } from "@/lib/utils";
 
 const SUMMARY_METRICS = {
   utilization: "Share of total liquidity currently active at the pool's final tick, with the peak share shown for comparison.",
@@ -45,10 +45,14 @@ const DETAIL_METRICS = {
 
 export function PoolsView({
   pools,
+  token0,
+  token1,
   expandedPoolId: controlledExpandedPoolId,
   onExpandedPoolChange,
 }: {
   pools: PoolSummary[];
+  token0: TokenDisplayConfig;
+  token1: TokenDisplayConfig;
   expandedPoolId?: string | null;
   onExpandedPoolChange?: (poolId: string | null) => void;
 }) {
@@ -126,22 +130,22 @@ export function PoolsView({
                 {pools.map((pool) => {
                   const isExpanded = expandedPoolId === pool.poolId;
                   const detailId = `pool-detail-${pool.poolId}`;
-                  const initialAmounts = formatCompactTokenPair(
-                    pool.token0Symbol,
+                  const initialAmounts = formatTokenPairWithDecimals(
+                    token0,
                     pool.initialToken0Amount,
-                    pool.token1Symbol,
+                    token1,
                     pool.initialToken1Amount,
                   );
-                  const currentAmounts = formatCompactTokenPair(
-                    pool.token0Symbol,
+                  const currentAmounts = formatTokenPairWithDecimals(
+                    token0,
                     pool.currentToken0Amount,
-                    pool.token1Symbol,
+                    token1,
                     pool.currentToken1Amount,
                   );
-                  const totalFeesAccrued = formatCompactTokenPair(
-                    pool.token0Symbol,
+                  const totalFeesAccrued = formatTokenPairWithDecimals(
+                    token0,
                     pool.totalFeeAccruedToken0,
-                    pool.token1Symbol,
+                    token1,
                     pool.totalFeeAccruedToken1,
                   );
 

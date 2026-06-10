@@ -124,10 +124,19 @@ function PnlValue({
   className,
 }: {
   value: string;
-  positive: boolean;
+  positive?: boolean;
   className?: string;
 }) {
-  return <div className={cn(positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400", className)}>{value}</div>;
+  return (
+    <div
+      className={cn(
+        positive === undefined ? "" : positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+        className,
+      )}
+    >
+      {value}
+    </div>
+  );
 }
 
 export { GroupedMetricsCard, MetricHeader, MetricLabel, MetricStack, PnlValue, StatLine };

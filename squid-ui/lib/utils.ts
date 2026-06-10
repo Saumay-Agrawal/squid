@@ -20,6 +20,11 @@ export type FormattedAmountParts = {
   secondary: string | null;
 };
 
+export type TokenDisplayConfig = {
+  symbol: string;
+  decimals: number;
+};
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -125,6 +130,67 @@ export function formatTokenBalance(value: bigint, decimals: number) {
   const sign = negative ? "-" : "";
 
   return fraction ? `${sign}${wholeText}.${fraction}` : `${sign}${wholeText}`;
+}
+
+export function formatSignedTokenBalance(value: bigint, decimals: number) {
+  if (value === 0n) {
+    return "0";
+  }
+
+  return value > 0n ? `+${formatTokenBalance(value, decimals)}` : formatTokenBalance(value, decimals);
+}
+
+export function formatTokenAmountParts(value: bigint, decimals: number): FormattedAmountParts {
+  return {
+    primary: formatTokenBalance(value, decimals),
+    secondary: null,
+  };
+}
+
+export function formatSignedTokenAmountParts(value: bigint, decimals: number): FormattedAmountParts {
+  return {
+    primary: formatSignedTokenBalance(value, decimals),
+    secondary: null,
+  };
+}
+
+export function formatTokenPairWithDecimals(
+  token0: TokenDisplayConfig,
+  value0: bigint,
+  token1: TokenDisplayConfig,
+  value1: bigint,
+) {
+  return {
+    primary: `${token0.symbol} ${formatTokenBalance(value0, token0.decimals)} / ${token1.symbol} ${formatTokenBalance(value1, token1.decimals)}`,
+    secondary: null,
+  };
+}
+
+export function formatSignedTokenPairWithDecimals(
+  token0: TokenDisplayConfig,
+  value0: bigint,
+  token1: TokenDisplayConfig,
+  value1: bigint,
+) {
+  return {
+    primary: `${token0.symbol} ${formatSignedTokenBalance(value0, token0.decimals)} / ${token1.symbol} ${formatSignedTokenBalance(value1, token1.decimals)}`,
+    secondary: null,
+  };
+}
+
+export function classifyDualTokenSign(value0: bigint, value1: bigint) {
+  const nonNegative = value0 >= 0n && value1 >= 0n;
+  const nonPositive = value0 <= 0n && value1 <= 0n;
+
+  if (nonNegative && (value0 > 0n || value1 > 0n)) {
+    return true;
+  }
+
+  if (nonPositive && (value0 < 0n || value1 < 0n)) {
+    return false;
+  }
+
+  return undefined;
 }
 
 export function formatBlock(value: number) {

@@ -9,12 +9,23 @@ import { HexValue } from "@/components/ui/hex-value";
 import { GroupedMetricsCard, MetricHeader, MetricLabel, MetricStack, PnlValue } from "@/components/ui/metric-elements";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { LpSummary } from "@/lib/dashboard";
-import { cn, formatAmount, formatAmountParts, formatFeeTier, formatRatioPercent, formatSignedAmount, formatSignedAmountParts, startCase } from "@/lib/utils";
+import {
+  classifyDualTokenSign,
+  cn,
+  formatAmount,
+  formatFeeTier,
+  formatRatioPercent,
+  formatSignedTokenPairWithDecimals,
+  formatTokenAmountParts,
+  formatTokenPairWithDecimals,
+  startCase,
+  type TokenDisplayConfig,
+} from "@/lib/utils";
 
 const LP_BOARD_METRICS = {
   positions: "Total positions seeded by this LP, with currently active positions shown underneath.",
   pools: "Distinct pools this LP has taken positions in.",
-  invested: "Placeholder dollar value derived from seeded USD principal already tracked in the simulation artifact.",
+  invested: "Aggregate token 0 principal already tracked in the simulation artifact.",
   liquidityActive: "Share of this LP's total liquidity that is currently active across all tracked positions.",
   pnl: "Net outcome across all tracked positions for this LP.",
 } as const;
@@ -22,7 +33,7 @@ const LP_BOARD_METRICS = {
 const LP_PROFILE_METRICS = {
   positions: "Current active positions shown against the total tracked positions for this LP.",
   liquidityActive: "Share of this LP's total liquidity that is currently in range.",
-  invested: "Placeholder dollar value sourced from the LP's seeded USD principal.",
+  invested: "Aggregate token 0 principal sourced from tracked positions.",
   netPnl: "Net outcome across all tracked positions for this LP.",
 } as const;
 
@@ -62,13 +73,25 @@ const POSITION_DETAIL_METRICS = {
   netPnl: "Net outcome for this position across both tokens.",
 } as const;
 
-export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAddress: string }) {
+export function LpsView({
+  lps,
+  selectedAddress,
+  token0,
+  token1,
+}: {
+  lps: LpSummary[];
+  selectedAddress: string;
+  token0: TokenDisplayConfig;
+  token1: TokenDisplayConfig;
+}) {
   const [expandedAddress, setExpandedAddress] = useState<string | null>(selectedAddress || (lps[0]?.address ?? null));
   const participatingLps = lps.filter((lp) => lp.positionCount > 0);
   const totalInvested = participatingLps.reduce((sum, lp) => sum + lp.totalPrincipal0, 0n);
-  const totalPnl = participatingLps.reduce((sum, lp) => sum + lp.totalPnl, 0n);
-  const totalInvestedParts = formatAmountParts(totalInvested);
-  const totalPnlParts = formatSignedAmountParts(totalPnl);
+  const totalInvestedParts = formatTokenAmountParts(totalInvested, token0.decimals);
+  const totalPnl0 = participatingLps.reduce((sum, lp) => sum + lp.totalNetPnl0, 0n);
+  const totalPnl1 = participatingLps.reduce((sum, lp) => sum + lp.totalNetPnl1, 0n);
+  const totalPnlParts = formatSignedTokenPairWithDecimals(token0, totalPnl0, token1, totalPnl1);
+  const totalPnlDirection = classifyDualTokenSign(totalPnl0, totalPnl1);
 
   return (
     <div className="space-y-4">
@@ -80,26 +103,26 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
           tooltip={LP_PROFILE_METRICS.positions}
         />
         <SummaryCard
-          title="Total amount invested"
-          value={`$${totalInvestedParts.primary}`}
-          detail={totalInvestedParts.secondary ? `$${totalInvestedParts.secondary}` : null}
-          note="Placeholder total dollar value across all LPs, based on tracked seeded USD principal."
+          title={`${token0.symbol} principal tracked`}
+          value={totalInvestedParts.primary}
+          detail={totalInvestedParts.secondary}
+          note="Aggregate token 0 principal across all LP positions."
           tooltip={LP_PROFILE_METRICS.invested}
         />
         <SummaryCard
-          title="Net PnL"
+          title="Net PnL by token"
           value={totalPnlParts.primary}
           detail={totalPnlParts.secondary}
           note="Aggregate net PnL across all tracked LP positions."
           tooltip={LP_PROFILE_METRICS.netPnl}
-          positive={totalPnl >= 0n}
+          positive={totalPnlDirection}
         />
       </section>
 
       <Card className="overflow-hidden">
         <CardHeader className="gap-2">
           <CardTitle className="text-xl">LP board</CardTitle>
-          <CardDescription>Compare participating LPs by footprint, invested capital placeholder, active liquidity share, and aggregate outcome.</CardDescription>
+          <CardDescription>Compare participating LPs by footprint, tracked token principal, active liquidity share, and aggregate outcome.</CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
           <div className="overflow-x-auto">
@@ -109,7 +132,7 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
                   <TableHead className="pl-6">LP</TableHead>
                   <TableHead><MetricHeader label="Positions" tooltip={LP_BOARD_METRICS.positions} /></TableHead>
                   <TableHead><MetricHeader label="Pools" tooltip={LP_BOARD_METRICS.pools} /></TableHead>
-                  <TableHead><MetricHeader label="Total amount invested" tooltip={LP_BOARD_METRICS.invested} /></TableHead>
+                  <TableHead><MetricHeader label={`${token0.symbol} principal tracked`} tooltip={LP_BOARD_METRICS.invested} /></TableHead>
                   <TableHead><MetricHeader label="Avg % liquidity active" tooltip={LP_BOARD_METRICS.liquidityActive} /></TableHead>
                   <TableHead><MetricHeader label="Net PnL" tooltip={LP_BOARD_METRICS.pnl} /></TableHead>
                   <TableHead className="w-12 pr-6" />
@@ -139,10 +162,13 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
                           <MetricStack primary={String(lp.positionCount)} secondary={`${lp.activePositionCount} active`} />
                         </TableCell>
                         <TableCell>{lp.poolCount}</TableCell>
-                        <TableCell>{formatUsdPlaceholder(lp.totalPrincipal0)}</TableCell>
+                        <TableCell>{formatTokenAmountParts(lp.totalPrincipal0, token0.decimals).primary}</TableCell>
                         <TableCell>{formatRatioPercent(lp.totalActiveLiquidity, lp.totalLiquidity)}</TableCell>
                         <TableCell>
-                          <PnlValue value={formatSignedAmount(lp.totalPnl)} positive={lp.totalPnl >= 0n} />
+                          <PnlValue
+                            value={formatSignedTokenPairWithDecimals(token0, lp.totalNetPnl0, token1, lp.totalNetPnl1).primary}
+                            positive={classifyDualTokenSign(lp.totalNetPnl0, lp.totalNetPnl1)}
+                          />
                         </TableCell>
                         <TableCell className="pr-6 text-right">
                           <button
@@ -161,7 +187,7 @@ export function LpsView({ lps, selectedAddress }: { lps: LpSummary[]; selectedAd
                         <TableRow className="bg-transparent hover:bg-transparent">
                           <TableCell className="border-0 bg-muted/20 p-0" colSpan={7} id={detailId}>
                             <div className="px-6 py-5">
-                              <LpProfileView lp={lp} selected={lp.address === selectedAddress} />
+                              <LpProfileView lp={lp} selected={lp.address === selectedAddress} token0={token0} token1={token1} />
                             </div>
                           </TableCell>
                         </TableRow>
@@ -213,9 +239,20 @@ function SummaryCard({
   );
 }
 
-function LpProfileView({ lp, selected }: { lp: LpSummary; selected: boolean }) {
-  const investedParts = formatAmountParts(lp.totalPrincipal0);
-  const pnlParts = formatSignedAmountParts(lp.totalPnl);
+function LpProfileView({
+  lp,
+  selected,
+  token0,
+  token1,
+}: {
+  lp: LpSummary;
+  selected: boolean;
+  token0: TokenDisplayConfig;
+  token1: TokenDisplayConfig;
+}) {
+  const investedParts = formatTokenAmountParts(lp.totalPrincipal0, token0.decimals);
+  const pnlParts = formatSignedTokenPairWithDecimals(token0, lp.totalNetPnl0, token1, lp.totalNetPnl1);
+  const pnlDirection = classifyDualTokenSign(lp.totalNetPnl0, lp.totalNetPnl1);
   const liquidityActivePercent = formatRatioPercent(lp.totalActiveLiquidity, lp.totalLiquidity);
 
   return (
@@ -253,22 +290,22 @@ function LpProfileView({ lp, selected }: { lp: LpSummary; selected: boolean }) {
               tooltip={LP_PROFILE_METRICS.liquidityActive}
             />
             <SummaryCard
-              title="Net PnL"
+              title="Net PnL by token"
               value={pnlParts.primary}
               detail={pnlParts.secondary}
-              note={`Total amount invested ${formatUsdPlaceholder(lp.totalPrincipal0)}.`}
+              note={`Tracked ${token0.symbol} principal ${investedParts.primary}.`}
               tooltip={LP_PROFILE_METRICS.netPnl}
-              positive={lp.totalPnl >= 0n}
+              positive={pnlDirection}
             />
           </div>
           <div className="rounded-2xl border border-border/60 bg-background/60 px-4 py-3 text-sm text-muted-foreground">
-            Total amount invested {formatUsdPlaceholder(lp.totalPrincipal0)}
+            {token0.symbol} principal tracked {investedParts.primary}
             {investedParts.secondary ? ` • ${investedParts.secondary}` : ""}
           </div>
         </CardHeader>
       </Card>
 
-      <LpPoolsBoard groups={lp.groups} lpAddress={lp.address} />
+      <LpPoolsBoard groups={lp.groups} lpAddress={lp.address} token0={token0} token1={token1} />
     </div>
   );
 }
@@ -276,9 +313,13 @@ function LpProfileView({ lp, selected }: { lp: LpSummary; selected: boolean }) {
 function LpPoolsBoard({
   groups,
   lpAddress,
+  token0,
+  token1,
 }: {
   groups: LpSummary["groups"];
   lpAddress: string;
+  token0: TokenDisplayConfig;
+  token1: TokenDisplayConfig;
 }) {
   const [expandedPoolId, setExpandedPoolId] = useState<string | null>(groups[0]?.poolId ?? null);
 
@@ -293,9 +334,11 @@ function LpPoolsBoard({
           {groups.map((group) => {
             const isExpanded = expandedPoolId === group.poolId;
             const detailId = `${lpAddress}-${group.poolId}`;
-            const pnlParts = formatSignedAmountParts(group.totalPnl);
-            const token0InvestedParts = formatAmountParts(group.totalPrincipal0);
-            const token1InvestedParts = formatAmountParts(group.totalPrincipal1);
+            const pnlParts = formatSignedTokenPairWithDecimals(token0, group.totalNetPnl0, token1, group.totalNetPnl1);
+            const pnlDirection = classifyDualTokenSign(group.totalNetPnl0, group.totalNetPnl1);
+            const feesParts = formatTokenPairWithDecimals(token0, group.totalFeeAccumulated0, token1, group.totalFeeAccumulated1);
+            const token0InvestedParts = formatTokenAmountParts(group.totalPrincipal0, token0.decimals);
+            const token1InvestedParts = formatTokenAmountParts(group.totalPrincipal1, token1.decimals);
             const liquidityActivePercent = formatRatioPercent(group.totalActiveLiquidity, group.totalLiquidity);
 
             return (
@@ -308,16 +351,16 @@ function LpPoolsBoard({
                     </div>
                   </div>
                   <div>
-                    <MetricLabel label="USD invested" tooltip={POOL_ROW_METRICS.token0Invested} className="text-xs uppercase tracking-[0.16em]" />
+                    <MetricLabel label={`${token0.symbol} invested`} tooltip={POOL_ROW_METRICS.token0Invested} className="text-xs uppercase tracking-[0.16em]" />
                     <div className="mt-1 font-medium">{token0InvestedParts.primary}</div>
                   </div>
                   <div>
-                    <MetricLabel label="ETH invested" tooltip={POOL_ROW_METRICS.token1Invested} className="text-xs uppercase tracking-[0.16em]" />
+                    <MetricLabel label={`${token1.symbol} invested`} tooltip={POOL_ROW_METRICS.token1Invested} className="text-xs uppercase tracking-[0.16em]" />
                     <div className="mt-1 font-medium">{token1InvestedParts.primary}</div>
                   </div>
                   <div>
                     <MetricLabel label="PnL" tooltip={POOL_ROW_METRICS.pnl} className="text-xs uppercase tracking-[0.16em]" />
-                    <PnlValue value={pnlParts.primary} positive={group.totalPnl >= 0n} className="mt-1 font-medium" />
+                    <PnlValue value={pnlParts.primary} positive={pnlDirection} className="mt-1 font-medium" />
                   </div>
                   <div>
                     <MetricLabel label="Positions" tooltip={POOL_ROW_METRICS.positions} className="text-xs uppercase tracking-[0.16em]" />
@@ -364,8 +407,8 @@ function LpPoolsBoard({
                         <PoolMetricCard
                           title="Fees"
                           tooltip={POOL_DETAIL_METRICS.fees}
-                          value={formatAmount(group.totalFees)}
-                          detail={formatAmountParts(group.totalFees).secondary}
+                          value={feesParts.primary}
+                          detail={feesParts.secondary}
                           note="Aggregate fees accrued by this LP in the pool."
                         />
                         <PoolMetricCard
@@ -380,11 +423,11 @@ function LpPoolsBoard({
                           value={pnlParts.primary}
                           detail={pnlParts.secondary}
                           note="Aggregate net outcome for this LP in the pool."
-                          positive={group.totalPnl >= 0n}
+                          positive={pnlDirection}
                         />
                       </div>
                       <div className="mt-4">
-                        <ProfileLikePositionsBoard positions={group.positions} groupKey={`${lpAddress}-${group.poolId}`} />
+                        <ProfileLikePositionsBoard positions={group.positions} groupKey={`${lpAddress}-${group.poolId}`} token0={token0} token1={token1} />
                       </div>
                     </div>
                   </div>
@@ -435,9 +478,13 @@ function PoolMetricCard({
 function ProfileLikePositionsBoard({
   positions,
   groupKey,
+  token0,
+  token1,
 }: {
   positions: LpSummary["groups"][number]["positions"];
   groupKey: string;
+  token0: TokenDisplayConfig;
+  token1: TokenDisplayConfig;
 }) {
   const [expandedPositionId, setExpandedPositionId] = useState<string | null>(positions[0]?.positionId ?? null);
 
@@ -446,12 +493,14 @@ function ProfileLikePositionsBoard({
       {positions.map((position) => {
         const isExpanded = expandedPositionId === position.positionId;
         const detailId = `${groupKey}-${position.positionId}`;
-        const token0InvestedParts = formatAmountParts(position.principalAmount0);
-        const token1InvestedParts = formatAmountParts(position.principalAmount1);
-        const currentToken0Parts = formatAmountParts(position.currentAmount0);
-        const currentToken1Parts = formatAmountParts(position.currentAmount1);
-        const feesToken0Parts = formatAmountParts(position.feeAccumulated0);
-        const feesToken1Parts = formatAmountParts(position.feeAccumulated1);
+        const token0InvestedParts = formatTokenAmountParts(position.principalAmount0, token0.decimals);
+        const token1InvestedParts = formatTokenAmountParts(position.principalAmount1, token1.decimals);
+        const currentToken0Parts = formatTokenAmountParts(position.currentAmount0, token0.decimals);
+        const currentToken1Parts = formatTokenAmountParts(position.currentAmount1, token1.decimals);
+        const feesToken0Parts = formatTokenAmountParts(position.feeAccumulated0, token0.decimals);
+        const feesToken1Parts = formatTokenAmountParts(position.feeAccumulated1, token1.decimals);
+        const netPnlParts = formatSignedTokenPairWithDecimals(token0, position.netPnl0, token1, position.netPnl1);
+        const netPnlDirection = classifyDualTokenSign(position.netPnl0, position.netPnl1);
         const liquidityActive = formatRatioPercent(position.activeLiquidity, position.liquidity);
 
         return (
@@ -472,18 +521,18 @@ function ProfileLikePositionsBoard({
                 </div>
               </div>
               <div>
-                <MetricLabel label="USD invested" tooltip={POSITION_ROW_METRICS.token0Invested} className="text-xs uppercase tracking-[0.16em]" />
+                <MetricLabel label={`${token0.symbol} invested`} tooltip={POSITION_ROW_METRICS.token0Invested} className="text-xs uppercase tracking-[0.16em]" />
                 <div className="mt-1 font-medium">{token0InvestedParts.primary}</div>
                 {token0InvestedParts.secondary ? <div className="text-xs text-muted-foreground">{token0InvestedParts.secondary}</div> : null}
               </div>
               <div>
-                <MetricLabel label="ETH invested" tooltip={POSITION_ROW_METRICS.token1Invested} className="text-xs uppercase tracking-[0.16em]" />
+                <MetricLabel label={`${token1.symbol} invested`} tooltip={POSITION_ROW_METRICS.token1Invested} className="text-xs uppercase tracking-[0.16em]" />
                 <div className="mt-1 font-medium">{token1InvestedParts.primary}</div>
                 {token1InvestedParts.secondary ? <div className="text-xs text-muted-foreground">{token1InvestedParts.secondary}</div> : null}
               </div>
               <div>
                 <MetricLabel label="Current PnL" tooltip={POSITION_ROW_METRICS.pnl} className="text-xs uppercase tracking-[0.16em]" />
-                <PnlValue value={formatSignedAmount(position.netPnl)} positive={position.netPnl >= 0n} className="mt-1 font-medium" />
+                <PnlValue value={netPnlParts.primary} positive={netPnlDirection} className="mt-1 font-medium" />
               </div>
               <div className="text-right">
                 <button
@@ -515,12 +564,12 @@ function ProfileLikePositionsBoard({
                     title="Position stats"
                     description="Initial and current balances plus fees accrued for each pool token."
                     metrics={[
-                      { label: "USD initial", value: token0InvestedParts.primary, detail: token0InvestedParts.secondary, tooltip: POSITION_DETAIL_METRICS.initialToken0 },
-                      { label: "ETH initial", value: token1InvestedParts.primary, detail: token1InvestedParts.secondary, tooltip: POSITION_DETAIL_METRICS.initialToken1 },
-                      { label: "USD current", value: currentToken0Parts.primary, detail: currentToken0Parts.secondary, tooltip: POSITION_DETAIL_METRICS.currentToken0 },
-                      { label: "ETH current", value: currentToken1Parts.primary, detail: currentToken1Parts.secondary, tooltip: POSITION_DETAIL_METRICS.currentToken1 },
-                      { label: "USD fees", value: feesToken0Parts.primary, detail: feesToken0Parts.secondary, tooltip: POSITION_DETAIL_METRICS.feesToken0 },
-                      { label: "ETH fees", value: feesToken1Parts.primary, detail: feesToken1Parts.secondary, tooltip: POSITION_DETAIL_METRICS.feesToken1 },
+                      { label: `${token0.symbol} initial`, value: token0InvestedParts.primary, detail: token0InvestedParts.secondary, tooltip: POSITION_DETAIL_METRICS.initialToken0 },
+                      { label: `${token1.symbol} initial`, value: token1InvestedParts.primary, detail: token1InvestedParts.secondary, tooltip: POSITION_DETAIL_METRICS.initialToken1 },
+                      { label: `${token0.symbol} current`, value: currentToken0Parts.primary, detail: currentToken0Parts.secondary, tooltip: POSITION_DETAIL_METRICS.currentToken0 },
+                      { label: `${token1.symbol} current`, value: currentToken1Parts.primary, detail: currentToken1Parts.secondary, tooltip: POSITION_DETAIL_METRICS.currentToken1 },
+                      { label: `${token0.symbol} fees`, value: feesToken0Parts.primary, detail: feesToken0Parts.secondary, tooltip: POSITION_DETAIL_METRICS.feesToken0 },
+                      { label: `${token1.symbol} fees`, value: feesToken1Parts.primary, detail: feesToken1Parts.secondary, tooltip: POSITION_DETAIL_METRICS.feesToken1 },
                     ]}
                   />
                   <GroupedMetricsCard
@@ -528,7 +577,7 @@ function ProfileLikePositionsBoard({
                     description="How active this position stayed and the resulting aggregate outcome."
                     metrics={[
                       { label: "Liquidity active", value: liquidityActive, detail: `${formatAmount(position.activeLiquidity)} of ${formatAmount(position.liquidity)}`, tooltip: POSITION_DETAIL_METRICS.liquidityActive },
-                      { label: "Net PnL", value: formatSignedAmount(position.netPnl), detail: `USD ${formatSignedAmount(position.netPnl0)} / ETH ${formatSignedAmount(position.netPnl1)}`, tooltip: POSITION_DETAIL_METRICS.netPnl, positive: position.netPnl >= 0n },
+                      { label: "Net PnL", value: netPnlParts.primary, detail: netPnlParts.secondary, tooltip: POSITION_DETAIL_METRICS.netPnl, positive: netPnlDirection },
                     ]}
                   />
                 </div>
@@ -539,8 +588,4 @@ function ProfileLikePositionsBoard({
       })}
     </div>
   );
-}
-
-function formatUsdPlaceholder(value: bigint) {
-  return `$${formatAmount(value)}`;
 }

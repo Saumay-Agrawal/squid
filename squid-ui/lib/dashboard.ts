@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 type Artifact = {
-  format: "seed-v2";
+  format: "seed-v3";
   chainId: number;
   contracts: ArtifactContracts;
   market: ArtifactMarket;
@@ -26,24 +26,44 @@ type ArtifactMarket = {
   token1: string;
   token0Symbol: string;
   token1Symbol: string;
+  token0Decimals: number;
+  token1Decimals: number;
+  token0Native: boolean;
+  token1Native: boolean;
 };
 
 type ArtifactSeedManifest = {
   description: string;
   poolCount: number;
   lpCount: number;
+  traderCount: number;
   positionCount: number;
   swapCount: number;
   lpRoster: ArtifactLpRosterEntry[];
+  traderRoster: ArtifactTraderRosterEntry[];
 };
 
 type ArtifactLpRosterEntry = {
   account: string;
   label: string;
+  role: "lp";
   tier: string;
+  strategy: string;
   anchor: boolean;
   plannedPositions: number;
-  usdBalanceSeeded: string | number;
+  usdcBalanceSeeded: string | number;
+  ethBalanceSeeded: string | number;
+};
+
+type ArtifactTraderRosterEntry = {
+  account: string;
+  label: string;
+  role: "trader";
+  strategy: string;
+  preferredPoolIndex: number;
+  netBuyEth: boolean;
+  plannedSwaps: number;
+  usdcBalanceSeeded: string | number;
   ethBalanceSeeded: string | number;
 };
 
@@ -162,9 +182,16 @@ type ArtifactPosition = {
 export type KnownAddress = {
   address: string;
   label: string;
+  role: "lp" | "trader";
   tier: string | null;
   anchor: boolean;
+  strategy: string | null;
   plannedPositions: number | null;
+  preferredPoolIndex: number | null;
+  plannedSwaps: number | null;
+  netBuyEth: boolean | null;
+  seededUsdcBalance: bigint | null;
+  seededEthBalance: bigint | null;
 };
 
 export type PositionSnapshot = {
@@ -214,7 +241,11 @@ export type PositionGroup = {
   totalLiquidity: bigint;
   totalActiveLiquidity: bigint;
   totalFees: bigint;
+  totalFeeAccumulated0: bigint;
+  totalFeeAccumulated1: bigint;
   totalPnl: bigint;
+  totalNetPnl0: bigint;
+  totalNetPnl1: bigint;
   totalPrincipal0: bigint;
   totalPrincipal1: bigint;
   totalCurrent0: bigint;
@@ -270,8 +301,9 @@ export type LpSummary = {
   label: string;
   tier: string | null;
   anchor: boolean;
+  strategy: string | null;
   plannedPositions: number | null;
-  seededUsdBalance: bigint | null;
+  seededUsdcBalance: bigint | null;
   seededEthBalance: bigint | null;
   positionCount: number;
   activePositionCount: number;
@@ -279,7 +311,11 @@ export type LpSummary = {
   totalLiquidity: bigint;
   totalActiveLiquidity: bigint;
   totalFees: bigint;
+  totalFeeAccumulated0: bigint;
+  totalFeeAccumulated1: bigint;
   totalPnl: bigint;
+  totalNetPnl0: bigint;
+  totalNetPnl1: bigint;
   totalPrincipal0: bigint;
   totalPrincipal1: bigint;
   totalCurrent0: bigint;
@@ -299,6 +335,7 @@ export type SquidDashboardData = {
     description: string;
     poolCount: number;
     lpCount: number;
+    traderCount: number;
     positionCount: number;
     swapCount: number;
   };
@@ -312,7 +349,7 @@ export function loadSquidDashboard(): SquidDashboardData {
   const raw = fs.readFileSync(artifactPath, "utf8");
   const artifact = JSON.parse(raw) as Artifact;
 
-  if (artifact.format !== "seed-v2") {
+  if (artifact.format !== "seed-v3") {
     throw new Error(`Unsupported simulation artifact format: ${artifact.format}`);
   }
 
@@ -326,13 +363,36 @@ export function loadSquidDashboard(): SquidDashboardData {
     positionsByPoolId.set(position.summary.poolId, bucket);
   }
 
-  const knownAddresses: KnownAddress[] = artifact.seedManifest.lpRoster.map((entry) => ({
-    address: entry.account,
-    label: entry.label,
-    tier: entry.tier,
-    anchor: entry.anchor,
-    plannedPositions: entry.plannedPositions,
-  }));
+  const knownAddresses: KnownAddress[] = [
+    ...artifact.seedManifest.lpRoster.map((entry) => ({
+      address: entry.account,
+      label: entry.label,
+      role: entry.role,
+      tier: entry.tier,
+      anchor: entry.anchor,
+      strategy: entry.strategy,
+      plannedPositions: entry.plannedPositions,
+      preferredPoolIndex: null,
+      plannedSwaps: null,
+      netBuyEth: null,
+      seededUsdcBalance: toBigInt(entry.usdcBalanceSeeded),
+      seededEthBalance: toBigInt(entry.ethBalanceSeeded),
+    })),
+    ...artifact.seedManifest.traderRoster.map((entry) => ({
+      address: entry.account,
+      label: entry.label,
+      role: entry.role,
+      tier: null,
+      anchor: false,
+      strategy: entry.strategy,
+      plannedPositions: null,
+      preferredPoolIndex: entry.preferredPoolIndex,
+      plannedSwaps: entry.plannedSwaps,
+      netBuyEth: entry.netBuyEth,
+      seededUsdcBalance: toBigInt(entry.usdcBalanceSeeded),
+      seededEthBalance: toBigInt(entry.ethBalanceSeeded),
+    })),
+  ];
 
   const poolSummaries: PoolSummary[] = artifact.pools.map((pool) => {
     const poolSummary = pool.finalState.poolSummary;
@@ -406,8 +466,9 @@ export function loadSquidDashboard(): SquidDashboardData {
         label,
         tier: rosterEntry?.tier ?? null,
         anchor: rosterEntry?.anchor ?? false,
+        strategy: rosterEntry?.strategy ?? null,
         plannedPositions: rosterEntry?.plannedPositions ?? null,
-        seededUsdBalance: rosterEntry ? toBigInt(rosterEntry.usdBalanceSeeded) : null,
+        seededUsdcBalance: rosterEntry ? toBigInt(rosterEntry.usdcBalanceSeeded) : null,
         seededEthBalance: rosterEntry ? toBigInt(rosterEntry.ethBalanceSeeded) : null,
         positionCount: 0,
         activePositionCount: 0,
@@ -415,7 +476,11 @@ export function loadSquidDashboard(): SquidDashboardData {
         totalLiquidity: 0n,
         totalActiveLiquidity: 0n,
         totalFees: 0n,
+        totalFeeAccumulated0: 0n,
+        totalFeeAccumulated1: 0n,
         totalPnl: 0n,
+        totalNetPnl0: 0n,
+        totalNetPnl1: 0n,
         totalPrincipal0: 0n,
         totalPrincipal1: 0n,
         totalCurrent0: 0n,
@@ -444,7 +509,11 @@ export function loadSquidDashboard(): SquidDashboardData {
         totalLiquidity: 0n,
         totalActiveLiquidity: 0n,
         totalFees: 0n,
+        totalFeeAccumulated0: 0n,
+        totalFeeAccumulated1: 0n,
         totalPnl: 0n,
+        totalNetPnl0: 0n,
+        totalNetPnl1: 0n,
         totalPrincipal0: 0n,
         totalPrincipal1: 0n,
         totalCurrent0: 0n,
@@ -498,7 +567,11 @@ export function loadSquidDashboard(): SquidDashboardData {
     group.totalLiquidity += liquidity;
     group.totalActiveLiquidity += activeLiquidity;
     group.totalFees += fees;
+    group.totalFeeAccumulated0 += feeAccumulated0;
+    group.totalFeeAccumulated1 += feeAccumulated1;
     group.totalPnl += netPnl;
+    group.totalNetPnl0 += netPnl0;
+    group.totalNetPnl1 += netPnl1;
     group.totalPrincipal0 += snapshot.principalAmount0;
     group.totalPrincipal1 += snapshot.principalAmount1;
     group.totalCurrent0 += snapshot.currentAmount0;
@@ -513,7 +586,11 @@ export function loadSquidDashboard(): SquidDashboardData {
     lp.totalLiquidity += liquidity;
     lp.totalActiveLiquidity += activeLiquidity;
     lp.totalFees += fees;
+    lp.totalFeeAccumulated0 += feeAccumulated0;
+    lp.totalFeeAccumulated1 += feeAccumulated1;
     lp.totalPnl += netPnl;
+    lp.totalNetPnl0 += netPnl0;
+    lp.totalNetPnl1 += netPnl1;
     lp.totalPrincipal0 += snapshot.principalAmount0;
     lp.totalPrincipal1 += snapshot.principalAmount1;
     lp.totalCurrent0 += snapshot.currentAmount0;
@@ -546,6 +623,7 @@ export function loadSquidDashboard(): SquidDashboardData {
       description: artifact.seedManifest.description,
       poolCount: artifact.seedManifest.poolCount,
       lpCount: artifact.seedManifest.lpCount,
+      traderCount: artifact.seedManifest.traderCount,
       positionCount: artifact.seedManifest.positionCount,
       swapCount: artifact.seedManifest.swapCount,
     },
