@@ -21,7 +21,7 @@ import {PoolTakeTest} from "@uniswap/v4-core/src/test/PoolTakeTest.sol";
 import {PoolClaimsTest} from "@uniswap/v4-core/src/test/PoolClaimsTest.sol";
 import {PoolNestedActionsTest} from "@uniswap/v4-core/src/test/PoolNestedActionsTest.sol";
 import {ActionsRouter} from "@uniswap/v4-core/src/test/ActionsRouter.sol";
-import {PoolLiquidity, PoolLPs, PoolPositions, PoolSummary, PoolTradeFlow} from "../src/types/PoolMetrics.sol";
+import {PoolAmounts, PoolLiquidity, PoolLPs, PoolPositions, PoolSummary, PoolTradeFlow} from "../src/types/PoolMetrics.sol";
 import {PositionLiquidity, PositionPnL, PositionSummary} from "../src/types/PositionMetrics.sol";
 import {Squid} from "../src/Squid.sol";
 import {PoolModifyLiquidityTestWithMsgSender} from "../src/test/PoolModifyLiquidityTestWithMsgSender.sol";
@@ -770,7 +770,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
     }
 
     function _poolSummaryJson(PoolSummary memory summary) internal view returns (string memory) {
-        string memory prefix = string(
+        string memory metadataJson = string(
             abi.encodePacked(
                 "{",
                 '"poolId":"',
@@ -796,7 +796,13 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 '",',
                 '"token1Symbol":"',
                 summary.token1Symbol,
-                '",',
+                '"'
+            )
+        );
+
+        string memory metricsJson = string(
+            abi.encodePacked(
+                ',',
                 '"fee":',
                 vm.toString(summary.fee),
                 ',',
@@ -806,13 +812,11 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 '"initialSqrtPriceX96":',
                 vm.toString(summary.initialSqrtPriceX96),
                 ',',
+                '"amounts":',
+                _poolAmountsJson(summary.amounts),
+                ',',
                 '"liquidity":',
-                _poolLiquidityJson(summary.liquidity)
-            )
-        );
-
-        string memory suffix = string(
-            abi.encodePacked(
+                _poolLiquidityJson(summary.liquidity),
                 ',',
                 '"lps":',
                 _poolLpsJson(summary.lps),
@@ -826,7 +830,33 @@ abstract contract BaseSquidSimulation is Script, Deployers {
             )
         );
 
-        return string(abi.encodePacked(prefix, suffix));
+        return string(abi.encodePacked(metadataJson, metricsJson));
+    }
+
+    function _poolAmountsJson(PoolAmounts memory amounts) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                "{",
+                '"initialToken0Amount":',
+                vm.toString(amounts.initialToken0Amount),
+                ',',
+                '"initialToken1Amount":',
+                vm.toString(amounts.initialToken1Amount),
+                ',',
+                '"currentToken0Amount":',
+                vm.toString(amounts.currentToken0Amount),
+                ',',
+                '"currentToken1Amount":',
+                vm.toString(amounts.currentToken1Amount),
+                ',',
+                '"totalFeeAccruedToken0":',
+                vm.toString(amounts.totalFeeAccruedToken0),
+                ',',
+                '"totalFeeAccruedToken1":',
+                vm.toString(amounts.totalFeeAccruedToken1),
+                "}"
+            )
+        );
     }
 
     function _poolLiquidityJson(PoolLiquidity memory liquidity) internal view returns (string memory) {
