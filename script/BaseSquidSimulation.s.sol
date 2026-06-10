@@ -21,7 +21,7 @@ import {PoolTakeTest} from "@uniswap/v4-core/src/test/PoolTakeTest.sol";
 import {PoolClaimsTest} from "@uniswap/v4-core/src/test/PoolClaimsTest.sol";
 import {PoolNestedActionsTest} from "@uniswap/v4-core/src/test/PoolNestedActionsTest.sol";
 import {ActionsRouter} from "@uniswap/v4-core/src/test/ActionsRouter.sol";
-import {PoolSummary} from "../src/types/PoolMetrics.sol";
+import {PoolLiquidity, PoolLPs, PoolPositions, PoolSummary, PoolTradeFlow} from "../src/types/PoolMetrics.sol";
 import {PositionLiquidity, PositionPnL, PositionSummary} from "../src/types/PositionMetrics.sol";
 import {Squid} from "../src/Squid.sol";
 import {PoolModifyLiquidityTestWithMsgSender} from "../src/test/PoolModifyLiquidityTestWithMsgSender.sol";
@@ -382,7 +382,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         return string(
             abi.encodePacked(
                 "{",
-                '"format":"seed-v1",',
+                '"format":"seed-v2",',
                 '"runTimestamp":',
                 vm.toString(block.timestamp),
                 ',',
@@ -770,7 +770,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
     }
 
     function _poolSummaryJson(PoolSummary memory summary) internal view returns (string memory) {
-        return string(
+        string memory prefix = string(
             abi.encodePacked(
                 "{",
                 '"poolId":"',
@@ -807,30 +807,103 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 vm.toString(summary.initialSqrtPriceX96),
                 ',',
                 '"liquidity":',
-                _poolLiquidityJson(
-                    summary.liquidity.totalLiquidity, summary.liquidity.activeLiquidity, summary.liquidity.peakActiveLiquidity
-                ),
+                _poolLiquidityJson(summary.liquidity)
+            )
+        );
+
+        string memory suffix = string(
+            abi.encodePacked(
+                ',',
+                '"lps":',
+                _poolLpsJson(summary.lps),
+                ',',
+                '"positions":',
+                _poolPositionsJson(summary.positions),
+                ',',
+                '"tradeFlow":',
+                _poolTradeFlowJson(summary.tradeFlow),
+                "}"
+            )
+        );
+
+        return string(abi.encodePacked(prefix, suffix));
+    }
+
+    function _poolLiquidityJson(PoolLiquidity memory liquidity) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                "{",
+                '"totalLiquidity":',
+                vm.toString(liquidity.totalLiquidity),
+                ',',
+                '"activeLiquidity":',
+                vm.toString(liquidity.activeLiquidity),
+                ',',
+                '"peakActiveLiquidity":',
+                vm.toString(liquidity.peakActiveLiquidity),
+                ',',
+                '"totalLiquidityAtPeakActive":',
+                vm.toString(liquidity.totalLiquidityAtPeakActive),
+                ',',
+                '"liquidityUtilisationBps":',
+                vm.toString(liquidity.liquidityUtilisationBps),
+                ',',
+                '"peakLiquidityUtilisationBps":',
+                vm.toString(liquidity.peakLiquidityUtilisationBps),
                 "}"
             )
         );
     }
 
-    function _poolLiquidityJson(uint128 totalLiquidity, uint128 activeLiquidity, uint128 peakActiveLiquidity)
-        internal
-        view
-        returns (string memory)
-    {
+    function _poolLpsJson(PoolLPs memory lps) internal view returns (string memory) {
         return string(
             abi.encodePacked(
                 "{",
-                '"totalLiquidity":',
-                vm.toString(totalLiquidity),
+                '"activeLpCount":',
+                vm.toString(lps.activeLpCount),
                 ',',
-                '"activeLiquidity":',
-                vm.toString(activeLiquidity),
+                '"lifetimeLpCount":',
+                vm.toString(lps.lifetimeLpCount),
                 ',',
-                '"peakActiveLiquidity":',
-                vm.toString(peakActiveLiquidity),
+                '"lpRetentionBps":',
+                vm.toString(lps.lpRetentionBps),
+                "}"
+            )
+        );
+    }
+
+    function _poolPositionsJson(PoolPositions memory positions) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                "{",
+                '"activePositionCount":',
+                vm.toString(positions.activePositionCount),
+                ',',
+                '"totalPositionCount":',
+                vm.toString(positions.totalPositionCount),
+                ',',
+                '"activePositionPercentageBps":',
+                vm.toString(positions.activePositionPercentageBps),
+                "}"
+            )
+        );
+    }
+
+    function _poolTradeFlowJson(PoolTradeFlow memory tradeFlow) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                "{",
+                '"totalSwapCount":',
+                vm.toString(tradeFlow.totalSwapCount),
+                ',',
+                '"zeroToOneSwapCount":',
+                vm.toString(tradeFlow.zeroToOneSwapCount),
+                ',',
+                '"oneToZeroSwapCount":',
+                vm.toString(tradeFlow.oneToZeroSwapCount),
+                ',',
+                '"flowSkewnessBps":',
+                vm.toString(tradeFlow.flowSkewnessBps),
                 "}"
             )
         );

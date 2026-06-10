@@ -69,7 +69,7 @@ type ArtifactPool = {
         totalLiquidity: string | number;
         activeLiquidity: string | number;
         peakActiveLiquidity: string | number;
-        totalLiquidityAtPeakActive: string | number;
+        totalLiquidityAtPeakActive?: string | number;
         liquidityUtilisationBps: number;
         peakLiquidityUtilisationBps: number;
       };
@@ -232,7 +232,10 @@ export function loadSquidDashboard(): SquidDashboardData {
       totalLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.totalLiquidity),
       activeLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.activeLiquidity),
       peakActiveLiquidity: toBigInt(pool.finalState.poolSummary.liquidity.peakActiveLiquidity),
-      totalLiquidityAtPeakActive: toBigInt(pool.finalState.poolSummary.liquidity.totalLiquidityAtPeakActive),
+      totalLiquidityAtPeakActive: toBigInt(
+        pool.finalState.poolSummary.liquidity.totalLiquidityAtPeakActive,
+        pool.finalState.poolSummary.liquidity.totalLiquidity,
+      ),
       liquidityUtilisationBps: pool.finalState.poolSummary.liquidity.liquidityUtilisationBps,
       peakLiquidityUtilisationBps: pool.finalState.poolSummary.liquidity.peakLiquidityUtilisationBps,
       lpCount: pool.lpAddresses.length,
@@ -347,8 +350,8 @@ export function loadSquidDashboard(): SquidDashboardData {
   };
 }
 
-function toBigInt(value: string | number) {
-  return BigInt(value);
+function toBigInt(value: string | number | null | undefined, fallback: string | number = 0) {
+  return BigInt(value ?? fallback);
 }
 
 function shortenAddressLike(value: string) {
