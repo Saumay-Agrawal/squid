@@ -29,6 +29,15 @@ struct PoolTradeFlow {
     uint32 flowSkewnessBps;
 }
 
+struct PoolAmounts {
+    uint256 initialToken0Amount;
+    uint256 initialToken1Amount;
+    uint256 currentToken0Amount;
+    uint256 currentToken1Amount;
+    uint256 totalFeeAccruedToken0;
+    uint256 totalFeeAccruedToken1;
+}
+
 struct PoolSummary {
     bytes32 poolId;
     bool initialized;
@@ -41,6 +50,7 @@ struct PoolSummary {
     uint24 fee;
     int24 tickSpacing;
     uint160 initialSqrtPriceX96;
+    PoolAmounts amounts;
     PoolLiquidity liquidity;
     PoolLPs lps;
     PoolPositions positions;

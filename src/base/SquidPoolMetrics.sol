@@ -4,11 +4,12 @@ pragma solidity ^0.8.24;
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
-import {PoolLiquidity, PoolLPs, PoolPositions, PoolSummary, PoolTradeFlow} from "../types/PoolMetrics.sol";
+import {PoolAmounts, PoolLiquidity, PoolLPs, PoolPositions, PoolSummary, PoolTradeFlow} from "../types/PoolMetrics.sol";
 import {TokenSymbolResolver} from "../libraries/TokenSymbolResolver.sol";
 
 abstract contract SquidPoolMetrics {
@@ -22,6 +23,7 @@ abstract contract SquidPoolMetrics {
     error LiquidityDeltaOverflow();
 
     mapping(PoolId poolId => PoolSummary) internal poolSummariesById;
+    mapping(PoolId poolId => bool initialized) internal poolAmountsInitializedById;
     mapping(PoolId poolId => mapping(address owner => uint32 count)) internal activePositionCountByPoolAndOwner;
     mapping(PoolId poolId => mapping(address owner => bool counted)) internal hasCountedOwnerForPool;
 
@@ -70,29 +72,44 @@ abstract contract SquidPoolMetrics {
         _syncPoolLiquidity(summary, poolId);
     }
 
-    function _recordPoolLiquidityAdded(PoolKey calldata key, ModifyLiquidityParams calldata params) internal {
+    function _recordPoolLiquidityAdded(
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued
+    ) internal {
         PoolId poolId = key.toId();
         PoolSummary storage summary = poolSummariesById[poolId];
         _requirePoolRegistered(poolId);
 
+        _applyPoolDelta(summary.amounts, poolId, delta);
+        _recordPoolFeesAccrued(summary.amounts, feesAccrued);
         summary.liquidity.totalLiquidity += _liquidityDeltaToUint128(params.liquidityDelta);
         _syncPoolLiquidity(summary, poolId);
     }
 
-    function _recordPoolLiquidityRemoved(PoolKey calldata key, ModifyLiquidityParams calldata params) internal {
+    function _recordPoolLiquidityRemoved(
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued
+    ) internal {
         PoolId poolId = key.toId();
         PoolSummary storage summary = poolSummariesById[poolId];
         _requirePoolRegistered(poolId);
 
+        _applyPoolDelta(summary.amounts, poolId, delta);
+        _recordPoolFeesAccrued(summary.amounts, feesAccrued);
         summary.liquidity.totalLiquidity -= _liquidityDeltaToUint128(-params.liquidityDelta);
         _syncPoolLiquidity(summary, poolId);
     }
 
-    function _recordPoolSwap(PoolKey calldata key, SwapParams calldata params) internal {
+    function _recordPoolSwap(PoolKey calldata key, SwapParams calldata params, BalanceDelta delta) internal {
         PoolId poolId = key.toId();
         PoolSummary storage summary = poolSummariesById[poolId];
         _requirePoolRegistered(poolId);
 
+        _applyPoolDelta(summary.amounts, poolId, delta);
         PoolTradeFlow storage tradeFlow = summary.tradeFlow;
         tradeFlow.totalSwapCount += 1;
 
@@ -121,6 +138,24 @@ abstract contract SquidPoolMetrics {
 
         liquidity.peakLiquidityUtilisationBps =
             _calculateUtilisationBps(liquidity.peakActiveLiquidity, liquidity.totalLiquidityAtPeakActive);
+    }
+
+    function _applyPoolDelta(PoolAmounts storage amounts, PoolId poolId, BalanceDelta delta) private {
+        amounts.currentToken0Amount += _poolNegativeAmount0(delta);
+        amounts.currentToken1Amount += _poolNegativeAmount1(delta);
+        amounts.currentToken0Amount -= _poolPositiveAmount0(delta);
+        amounts.currentToken1Amount -= _poolPositiveAmount1(delta);
+
+        if (!poolAmountsInitializedById[poolId] && (amounts.currentToken0Amount > 0 || amounts.currentToken1Amount > 0)) {
+            poolAmountsInitializedById[poolId] = true;
+            amounts.initialToken0Amount = amounts.currentToken0Amount;
+            amounts.initialToken1Amount = amounts.currentToken1Amount;
+        }
+    }
+
+    function _recordPoolFeesAccrued(PoolAmounts storage amounts, BalanceDelta feesAccrued) private {
+        amounts.totalFeeAccruedToken0 += _poolPositiveAmount0(feesAccrued);
+        amounts.totalFeeAccruedToken1 += _poolPositiveAmount1(feesAccrued);
     }
 
     function _recordPoolLpPositionLiquidityChange(
@@ -213,6 +248,26 @@ abstract contract SquidPoolMetrics {
 
     function _requirePoolRegistered(PoolId poolId) internal view {
         if (!poolSummariesById[poolId].initialized) revert PoolNotRegistered(PoolId.unwrap(poolId));
+    }
+
+    function _poolPositiveAmount0(BalanceDelta delta) private pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount0(delta);
+        if (value > 0) amount = uint128(value);
+    }
+
+    function _poolPositiveAmount1(BalanceDelta delta) private pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount1(delta);
+        if (value > 0) amount = uint128(value);
+    }
+
+    function _poolNegativeAmount0(BalanceDelta delta) private pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount0(delta);
+        if (value < 0) amount = uint256(uint128(-value));
+    }
+
+    function _poolNegativeAmount1(BalanceDelta delta) private pure returns (uint256 amount) {
+        int128 value = BalanceDeltaLibrary.amount1(delta);
+        if (value < 0) amount = uint256(uint128(-value));
     }
 
     function _poolManager() internal view virtual returns (IPoolManager);

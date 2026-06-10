@@ -40,7 +40,7 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         BalanceDelta feesAccrued,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
-        _recordPoolLiquidityAdded(key, params);
+        _recordPoolLiquidityAdded(key, params, delta, feesAccrued);
         _recordPositionOpenOrIncrease(sender, key, params, delta, feesAccrued);
         return (IHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
@@ -53,7 +53,7 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         BalanceDelta feesAccrued,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
-        _recordPoolLiquidityRemoved(key, params);
+        _recordPoolLiquidityRemoved(key, params, delta, feesAccrued);
         _recordPositionDecreaseOrClose(sender, key, params, delta, feesAccrued);
         return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
@@ -63,7 +63,7 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         override
         returns (bytes4, int128)
     {
-        _recordPoolSwap(key, params);
+        _recordPoolSwap(key, params, delta);
         _recordPositionSwap(key, params, delta);
         return (IHooks.afterSwap.selector, 0);
     }
