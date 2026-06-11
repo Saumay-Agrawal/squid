@@ -4,13 +4,41 @@ Squid is a Uniswap v4 hook that records pool-level and position-level metrics as
 
 This README is written for engineering review. It focuses on the Solidity system, the test and simulation surfaces, and the fastest path to understanding how the repo works.
 
-## What This Repo Contains
+## Index
+
+- [Repository Layout](#repository-layout)
+- [Fast Review Path](#fast-review-path)
+- [System Overview](#system-overview)
+- [Foundry Project](#foundry-project)
+  - [Contract structure](#contract-structure)
+  - [Hook lifecycle](#hook-lifecycle)
+  - [Test structure](#test-structure)
+  - [Test coverage map](#test-coverage-map)
+  - [Script structure](#script-structure)
+  - [Simulation flow](#simulation-flow)
+- [Setup](#setup)
+  - [1. Foundry project](#1-foundry-project)
+  - [2. `squid-ui`](#2-squid-ui)
+  - [3. `simulation-ui`](#3-simulation-ui)
+- [External Dependencies](#external-dependencies)
+- [Known Limitations](#known-limitations)
+
+## Repository Layout
 
 This repo has 3 major components:
 
 1. `./`: the root-level Foundry project containing all contracts, tests, and simulation scripts for the Squid hook
 2. `./squid-ui`: a UI dashboard for passive LPs
 3. `./simulation-ui`: a UI dashboard for observing liquidity and orderflow simulation output. This is still a WIP.
+
+```text
+.
+|-- src/             Solidity contracts and types
+|-- test/            Foundry tests and shared test harnesses
+|-- script/          Simulation harness and generated output
+|-- squid-ui/        Passive LP dashboard
+`-- simulation-ui/   Simulation dashboard (WIP)
+```
 
 ## Fast Review Path
 
@@ -27,17 +55,6 @@ If you want the shortest path to understanding the repo, review in this order:
 9. [test/pool/SquidReactivePoolGuard.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidReactivePoolGuard.t.sol)
 10. [script/BaseSquidSimulation.s.sol](/Users/saumay/Workspace/gh-saumay/squid/script/BaseSquidSimulation.s.sol)
 11. [script/SimulateSquid.s.sol](/Users/saumay/Workspace/gh-saumay/squid/script/SimulateSquid.s.sol)
-
-## Repository Layout
-
-```text
-.
-|-- src/             Solidity contracts and types
-|-- test/            Foundry tests and shared test harnesses
-|-- script/          Simulation harness and generated output
-|-- squid-ui/        Passive LP dashboard
-`-- simulation-ui/   Simulation dashboard (WIP)
-```
 
 ## System Overview
 
@@ -63,29 +80,59 @@ The reactive pool-guard path is a prototype integration surface built around emi
 
 ### Current deployment posture
 
-This repo is currently designed to run locally. It is not yet optimized for production deployment across supported chains.
-
-The current implementation keeps a broad set of metrics on-chain so the system is easier to inspect, test, and iterate on. The planned optimization direction is to reduce the gas footprint by keeping only the most relevant metrics on-chain, while moving the rest of the data flow off-chain through event emission and related indexing patterns.
-
-That optimization plan is still being refined. The current codebase should be read as a functional and inspectable baseline rather than a finalized production architecture.
+- This repo is currently designed to run locally.
+- It is not yet optimized for production deployment across supported chains.
+- The current implementation keeps a broad set of metrics on-chain so the system is easier to inspect, test, and iterate on.
+- The planned optimization direction is to reduce the gas footprint by keeping only the most relevant metrics on-chain.
+- The remaining metrics and supporting data flows are expected to move off-chain through event emission and related indexing patterns.
+- That optimization plan is still being refined, so the current codebase should be read as a functional baseline rather than a finalized production architecture.
 
 ### Envisioned chain strategy
 
-The intended primary deployment target is Unichain. The reasoning is that Squid can benefit from the native DEX ecosystem there while also taking advantage of lower storage and computation costs.
-
-The longer-term strategy is to run the fullest version of the system where the economics are most favorable, and connect leaner versions on other supported chains through Reactive Network integration.
+- The intended primary deployment target is Unichain.
+- The main rationale is that Squid can benefit from the native DEX ecosystem there while also taking advantage of lower storage and computation costs.
+- The longer-term strategy is to run the fullest version of the system where the economics are most favorable.
+- Leaner versions on other supported chains are expected to be connected through Reactive Network integration.
 
 ### Reactive Network integration
 
-The envisioned architecture is to unify the user and pool-management experience across chains by keeping relevant pool states and higher-level functionality in sync through Reactive Network.
+- The envisioned architecture is to unify the user and pool-management experience across chains.
+- The mechanism for that is to keep relevant pool states and higher-level functionality in sync through Reactive Network.
+- The current example scenario uses `% active positions`, defined as `active positions / total positions in a pool`, as a simple pool-health signal.
+- In this example, if `% active positions` falls below `80%`, it is treated as a sign of deteriorating pool health and unfavorable market conditions for that token pair.
+- Squid can emit a signal when that threshold is breached, and Reactive Network can use that signal to automatically coordinate protective actions in favor of LPs.
+- In the current demonstration, that protective action is halting LP position creation for the affected token pair, and later unhalting it when conditions recover.
+- The current local demonstration shows the shape of that pattern in a simplified form:
+  - `SquidPoolMetrics` emits threshold-breach or recovery signals.
+  - `MockReactiveContract` interprets those signals and prepares a callback payload.
+  - `MockPoolGuardReceiver` receives the callback and calls `haltPoolLiquidityAdds` or `unhaltPoolLiquidityAdds` on `Squid`.
+- In production, the same idea would extend beyond a single local environment.
+- A signal produced on one deployment could be transmitted through Reactive Network and used to coordinate corresponding pool controls or feature behavior on Squid deployments across multiple chains.
+- The goal is to keep the overall product experience more consistent even when execution is distributed.
 
-The current local demonstration shows the shape of that pattern in a simplified form:
+### Reactive workflow
 
-1. `SquidPoolMetrics` emits threshold-breach or recovery signals.
-2. `MockReactiveContract` interprets those signals and prepares a callback payload.
-3. `MockPoolGuardReceiver` receives the callback and calls `haltPoolLiquidityAdds` or `unhaltPoolLiquidityAdds` on `Squid`.
+Current local flow:
 
-In production, the same idea would extend beyond a single local environment. A signal produced on one deployment could be transmitted through Reactive Network and used to coordinate corresponding pool controls or feature behavior on Squid deployments across multiple chains, so the overall product experience remains more consistent even when execution is distributed.
+```mermaid
+flowchart LR
+    C1[Pool event]
+    C2[Metric signal]
+    C3[Mock reactive callback]
+    C4[Squid halt or unhalt]
+    C1 --> C2 --> C3 --> C4
+```
+
+Planned multi-chain flow:
+
+```mermaid
+flowchart LR
+    P1[Unichain signal]
+    P2[Reactive Network relay]
+    P3[Other chains update]
+    P4[State stays aligned]
+    P1 --> P2 --> P3 --> P4
+```
 
 ## Foundry Project
 
@@ -145,64 +192,75 @@ flowchart LR
 
 The test suite under [test](/Users/saumay/Workspace/gh-saumay/squid/test) is split into helpers, pool-focused tests, and position-focused tests:
 
-```text
-test
-|-- helpers
-|   |-- SquidTestBase.t.sol
-|   `-- TestTokens.sol
-|-- pool
-|   |-- SquidPoolInitialization.t.sol
-|   |-- SquidPoolLiquidityMetrics.t.sol
-|   |-- SquidPoolLpMetrics.t.sol
-|   |-- SquidPoolPositionMetrics.t.sol
-|   |-- SquidPoolTradeFlowMetrics.t.sol
-|   `-- SquidReactivePoolGuard.t.sol
-`-- position
-    |-- SquidPositionLiquidity.t.sol
-    |-- SquidPositionMsgSenderRouter.t.sol
-    |-- SquidPositionPnL.t.sol
-    `-- SquidPositionSummary.t.sol
-```
+#### Helpers
 
-| Area | Path | Main scenarios covered |
-| --- | --- | --- |
-| Helpers | [test/helpers/SquidTestBase.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/helpers/SquidTestBase.t.sol) | Shared deployment harness for pool manager, hook, routers, and seeded environment |
-| Helpers | [test/helpers/TestTokens.sol](/Users/saumay/Workspace/gh-saumay/squid/test/helpers/TestTokens.sol) | Mock tokens used across tests and simulations |
-| Pool | [test/pool/SquidPoolInitialization.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidPoolInitialization.t.sol) | Pool registration, initialization metadata, symbol resolution, missing TWAP support |
-| Pool | [test/pool/SquidPoolLiquidityMetrics.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidPoolLiquidityMetrics.t.sol) | Total liquidity, active liquidity, utilization, peak active liquidity |
-| Pool | [test/pool/SquidPoolLpMetrics.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidPoolLpMetrics.t.sol) | Active LP count, lifetime LP count, LP retention behavior |
-| Pool | [test/pool/SquidPoolPositionMetrics.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidPoolPositionMetrics.t.sol) | Pool-level position counts and active-position participation |
-| Pool | [test/pool/SquidPoolTradeFlowMetrics.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidPoolTradeFlowMetrics.t.sol) | Directional swap counts and trade-flow skew |
-| Pool | [test/pool/SquidReactivePoolGuard.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/pool/SquidReactivePoolGuard.t.sol) | Threshold breach and recovery events, halt transitions, blocked adds |
-| Position | [test/position/SquidPositionSummary.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/position/SquidPositionSummary.t.sol) | Position identity, timestamps, salts, open/close lifecycle |
-| Position | [test/position/SquidPositionLiquidity.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/position/SquidPositionLiquidity.t.sol) | Active versus total liquidity, in-range swap volume |
-| Position | [test/position/SquidPositionPnL.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/position/SquidPositionPnL.t.sol) | Principal accounting, partial removal, fees, net PnL |
-| Position | [test/position/SquidPositionMsgSenderRouter.t.sol](/Users/saumay/Workspace/gh-saumay/squid/test/position/SquidPositionMsgSenderRouter.t.sol) | Ownership attribution through router-based liquidity paths |
+**SquidTestBase.t.sol**
+✅ Provides the shared deployment harness for the pool manager, hook, routers, and seeded environment used across the suite.
 
-### Test coverage map
+**TestTokens.sol**
+✅ Provides mock tokens used by the tests and simulation setup.
 
-```mermaid
-flowchart LR
-    subgraph H[helpers]
-        H1[Harness setup]
-        H2[Mock tokens]
-    end
+#### Pool Tests
 
-    subgraph P[pool]
-        P1[Init]
-        P2[Liquidity]
-        P3[LP and positions]
-        P4[Trade flow]
-        P5[Guard]
-    end
+**SquidPoolInitialization.t.sol**
+✅ Checks that pool metrics are stored when a pool is initialized.
+✅ Checks that symbol lookup failures do not block pool initialization.
+✅ Checks that the current price view reads live pool state.
+✅ Checks that the TWAP view reverts until oracle support is added.
 
-    subgraph O[position]
-        O1[Lifecycle]
-        O2[Liquidity]
-        O3[PnL]
-        O4[Router owner]
-    end
-```
+**SquidPoolLiquidityMetrics.t.sol**
+✅ Checks that adding liquidity updates pool liquidity metrics.
+✅ Checks that out-of-range liquidity only changes total liquidity, not active liquidity.
+✅ Checks that removing liquidity updates both total and active liquidity correctly.
+✅ Checks that swaps refresh active liquidity without lowering the recorded peak.
+✅ Checks that peak liquidity utilization is computed from total liquidity at the peak.
+
+**SquidPoolLpMetrics.t.sol**
+✅ Checks that the first LP sets active LP count, lifetime LP count, and retention correctly.
+✅ Checks that multiple positions from the same LP are only counted once for LP-level metrics.
+✅ Checks that an LP exit and re-entry does not reset the lifetime LP count.
+✅ Checks that retention is tracked correctly when multiple LPs enter and exit.
+
+**SquidPoolPositionMetrics.t.sol**
+✅ Checks that the first in-range position updates both active and total position counts.
+✅ Checks that the first out-of-range position only updates the total position count.
+✅ Checks that multiple positions are counted independently.
+✅ Checks that a full close removes the active count while preserving the total historical count.
+✅ Checks that a swap moving price out of range updates the active position count.
+✅ Checks that a swap moving price back into range updates the active position count.
+
+**SquidPoolTradeFlowMetrics.t.sol**
+✅ Checks that the first zero-to-one swap updates directional flow counts correctly.
+✅ Checks that the first one-to-zero swap updates directional flow counts correctly.
+✅ Checks that balanced bidirectional flow produces zero skewness.
+✅ Checks that imbalanced flow reports non-zero skewness.
+✅ Checks that strongly imbalanced flow can exceed 100% skewness under the current metric definition.
+
+**SquidReactivePoolGuard.t.sol**
+✅ Checks that the reactive callback can halt and later unhalt new liquidity adds.
+✅ Checks that the breach event is not emitted repeatedly while the pool remains below the threshold.
+✅ Checks that the pool is not treated as recovered while it is still below the recovery threshold.
+
+#### Position Tests
+
+**SquidPositionLiquidity.t.sol**
+✅ Checks that a position tracks both total liquidity and active liquidity correctly.
+✅ Checks that swaps refresh the active liquidity of a position.
+✅ Checks that position swap volume is tracked both for lifetime activity and for in-range activity.
+
+**SquidPositionMsgSenderRouter.t.sol**
+✅ Checks that the msg.sender-aware router tracks the LP owner separately from the core owner.
+
+**SquidPositionPnL.t.sol**
+✅ Checks that open position PnL matches the current position state.
+✅ Checks that partial liquidity removal reduces principal on a pro-rata basis.
+✅ Checks that pending fees are included in PnL after swap activity.
+
+**SquidPositionSummary.t.sol**
+✅ Checks that adding liquidity stores position metrics.
+✅ Checks that repeated updates to the same canonical position update a single stored record.
+✅ Checks that using a different salt creates a distinct position record.
+✅ Checks that a position stays active after a partial removal and closes after a full removal.
 
 ### Script structure
 
@@ -229,32 +287,37 @@ The base harness currently seeds:
 - 4 trader accounts
 - multiple staged liquidity and swap actions across 5 action phases
 
-### Simulation flow
+### Simulation action phases
 
-```mermaid
-flowchart TD
-    A[Deploy local environment]
-    A --> A1[Pool manager]
-    A --> A2[Routers]
-    A --> A3[Squid hook]
+**Bootstrap**
+✅ Creates 5 ETH/USDC pools with different fee tiers and range widths.
+✅ Adds the initial LP positions so each pool starts with liquidity before trading begins.
 
-    A3 --> B[Seed actors and assets]
-    B --> B1[Test tokens]
-    B --> B2[LP roster]
-    B --> B3[Trader roster]
+**Price discovery**
+✅ Simulates early market activity as traders start buying and selling across different pools.
+✅ Pushes price in different directions to show how the tighter and wider pools react to initial order flow.
+✅ Establishes the first round of swap volume that Squid can use to update pool and position metrics.
 
-    B3 --> C[Initialize simulation state]
-    C --> C1[Create pools]
-    C --> C2[Seed LP positions]
+**High flow**
+✅ Simulates a busier market period with more frequent trading.
+✅ Creates heavier order flow in the tighter and standard pools.
+✅ Shows how active liquidity, swap counts, and trade-flow metrics change during sustained activity.
 
-    C2 --> D[Run scenarios]
-    D --> D1[Liquidity actions]
-    D --> D2[Swap actions]
+**Rebalance**
+✅ Simulates LPs adjusting their positions after the earlier price movement.
+✅ Moves some liquidity into new price ranges by partially closing old positions and reopening new ones.
+✅ Includes a few partial exits to show how position accounting changes when LPs scale down exposure.
+✅ Adds more trades after the rebalance so the updated positions are tested under fresh market activity.
 
-    D2 --> E[Write output artifact]
-    E --> F[script/output/anvil-simulation.json]
-    F --> G[Render in simulation-ui]
-```
+**Stress**
+✅ Simulates a harsher market phase with stronger sell pressure.
+✅ Pushes some pools further away from their earlier equilibrium.
+✅ Shows how Squid responds when market conditions become less favorable for some LP positions.
+
+**Late exit**
+✅ Simulates the end of the scenario as some LPs leave the market entirely and others reduce exposure.
+✅ Tests full exits and partial exits after the earlier trading and stress phases.
+✅ Finishes with a final set of swaps so the end-state metrics reflect both trader activity and LP exits.
 
 ## Setup
 
