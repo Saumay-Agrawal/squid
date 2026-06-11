@@ -261,8 +261,11 @@ export type PoolSummary = {
   poolIndex: number;
   poolLabel: string;
   tokenPair: string;
+  token0: string;
+  token1: string;
   token0Symbol: string;
   token1Symbol: string;
+  hook: string;
   fee: number;
   tickSpacing: number;
   tick: number;
@@ -403,8 +406,11 @@ export function loadSquidDashboard(): SquidDashboardData {
       poolIndex: pool.index,
       poolLabel: pool.label,
       tokenPair: artifact.market.basePair,
+      token0: poolSummary.token0,
+      token1: poolSummary.token1,
       token0Symbol: poolSummary.token0Symbol,
       token1Symbol: poolSummary.token1Symbol,
+      hook: pool.config.hook,
       fee: poolSummary.fee,
       tickSpacing: poolSummary.tickSpacing,
       tick: pool.finalState.currentPoolState.tick,

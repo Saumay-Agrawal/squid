@@ -127,7 +127,18 @@ export function DashboardShell({ data }: { data: SquidDashboardData }) {
         </aside>
 
         <main className="min-w-0 space-y-4">
-          {section === "pools" ? <PoolsView pools={data.poolSummaries} token0={token0} token1={token1} expandedPoolId={expandedPoolId} onExpandedPoolChange={setExpandedPoolId} /> : null}
+          {section === "pools" ? (
+            <PoolsView
+              pools={data.poolSummaries}
+              token0={token0}
+              token1={token1}
+              market={data.market}
+              contracts={data.contracts}
+              selectedAddress={selectedAddress}
+              expandedPoolId={expandedPoolId}
+              onExpandedPoolChange={setExpandedPoolId}
+            />
+          ) : null}
           {section === "lps" ? <LpsView lps={data.lpSummaries} selectedAddress={selectedAddress} token0={token0} token1={token1} /> : null}
           {section === "profile" ? (
             <ProfileView
@@ -206,7 +217,7 @@ function SidebarContext({
   const profilePnlParts = profile
     ? formatSignedTokenPairWithDecimals(token0, profile.totalNetPnl0, token1, profile.totalNetPnl1)
     : null;
-  const config =
+  const sectionConfig =
     section === "pools"
       ? {
           title: "Pools view",
@@ -225,8 +236,8 @@ function SidebarContext({
           }
         : null;
 
-  if (section === "profile") {
-    return (
+  return (
+    <div className="space-y-4">
       <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
         <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected account</div>
         <div className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">
@@ -261,6 +272,30 @@ function SidebarContext({
             seededToken1Balance={activeAddress.seededUsdcBalance}
           />
         ) : null}
+      </div>
+
+      {sectionConfig ? (
+        <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{sectionConfig.title}</div>
+          <div
+            className={cn(
+              "mt-2 text-xl font-semibold tracking-[-0.03em]",
+              sectionConfig.positive === undefined
+                ? ""
+                : sectionConfig.positive
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-rose-600 dark:text-rose-400"
+            )}
+          >
+            {sectionConfig.value}
+          </div>
+          {sectionConfig.detail ? <div className="mt-1 text-sm text-muted-foreground">{sectionConfig.detail}</div> : null}
+          <div className="mt-2 text-sm text-muted-foreground">{sectionConfig.note}</div>
+        </div>
+      ) : null}
+
+      <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
+        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contracts</div>
         <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">
           <div className="flex items-center justify-between gap-3">
             <span>PoolManager</span>
@@ -270,36 +305,6 @@ function SidebarContext({
             <span>Squid hook</span>
             <HexValue value={data.contracts.squid} textClassName="text-[11px] text-foreground" />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!config) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-3xl border border-border/70 bg-background/65 p-4">
-      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{config.title}</div>
-      <div
-        className={cn(
-          "mt-2 text-xl font-semibold tracking-[-0.03em]",
-          config.positive === undefined ? "" : config.positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-        )}
-      >
-        {config.value}
-      </div>
-      {config.detail ? <div className="mt-1 text-sm text-muted-foreground">{config.detail}</div> : null}
-      <div className="mt-2 text-sm text-muted-foreground">{config.note}</div>
-      <div className="mt-4 space-y-2 rounded-2xl border border-border/60 bg-card/60 p-3 text-xs text-muted-foreground">
-        <div className="flex items-center justify-between gap-3">
-          <span>PoolManager</span>
-          <HexValue value={data.contracts.poolManager} textClassName="text-[11px] text-foreground" />
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>Squid hook</span>
-          <HexValue value={data.contracts.squid} textClassName="text-[11px] text-foreground" />
         </div>
       </div>
     </div>
