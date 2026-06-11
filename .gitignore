@@ -12,6 +12,15 @@ docs/
 
 # Dependencies
 lib/
+deck/node_modules/
+squid-ui/node_modules/
+simulation-ui/node_modules/
+
+# Next.js build output
+deck/.next/
+squid-ui/.next/
+simulation-ui/.next/
+*.tsbuildinfo
 
 # Dotenv file
 .env

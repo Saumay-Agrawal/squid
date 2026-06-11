@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+:root {
+  --background: #06101a;
+  --foreground: #ecf6ff;
+  --muted-foreground: rgba(236, 246, 255, 0.68);
+  --border: rgba(255, 255, 255, 0.1);
+  --card: rgba(255, 255, 255, 0.04);
+  --card-strong: rgba(255, 255, 255, 0.08);
+  --cyan: #67e8f9;
+  --sky: #38bdf8;
+  --emerald: #6ee7b7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+}
+
+* {
+  @apply border-border;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply min-h-screen bg-background text-foreground antialiased;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(103, 232, 249, 0.12), transparent 20rem),
+    radial-gradient(circle at 88% 18%, rgba(56, 189, 248, 0.12), transparent 18rem),
+    radial-gradient(circle at 48% 88%, rgba(110, 231, 183, 0.08), transparent 24rem),
+    linear-gradient(180deg, #06101a 0%, #07131d 45%, #08111a 100%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.deck-track {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.deck-track::-webkit-scrollbar {
+  display: none;
+}
+
+.deck-slide {
+  scroll-snap-align: center;
+}
+
+.deck-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 90px 90px;
+  mask-image: radial-gradient(circle at center, black 34%, transparent 84%);
+}
+
+.deck-stage {
+  animation: stage-in 700ms ease both;
+}
+
+.deck-float {
+  animation: float 8s ease-in-out infinite;
+}
+
+.deck-float-delayed {
+  animation: float 10s ease-in-out infinite;
+  animation-delay: -3s;
+}
+
+.deck-pulse {
+  animation: pulse-glow 2.8s ease-in-out infinite;
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -14px, 0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(103, 232, 249, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 40px rgba(103, 232, 249, 0.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .deck-stage,
+  .deck-float,
+  .deck-float-delayed,
+  .deck-pulse {
+    animation: none;
+  }
+}

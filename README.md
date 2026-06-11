@@ -1,6 +1,6 @@
 # Squid
 
-Squid is a Uniswap v4 hook that records pool-level and position-level metrics as liquidity and swap activity flows through a pool. This repo also includes a deterministic Foundry simulation harness plus two dashboard apps for inspection.
+Squid is a Uniswap v4 hook that records pool-level and position-level metrics as liquidity and swap activity flows through a pool. This repo also includes a deterministic Foundry simulation harness, two dashboard apps for inspection, and a standalone presentation app.
 
 This README is written for engineering review. It focuses on the Solidity system, the test and simulation surfaces, and the fastest path to understanding how the repo works.
 
@@ -20,22 +20,25 @@ This README is written for engineering review. It focuses on the Solidity system
   - [1. Foundry project](#1-foundry-project)
   - [2. `squid-ui`](#2-squid-ui)
   - [3. `simulation-ui`](#3-simulation-ui)
+  - [4. `deck`](#4-deck)
 - [External Dependencies](#external-dependencies)
 - [Known Limitations](#known-limitations)
 
 ## Repository Layout
 
-This repo has 3 major components:
+This repo has 4 major components:
 
 1. `./`: the root-level Foundry project containing all contracts, tests, and simulation scripts for the Squid hook
 2. `./squid-ui`: a UI dashboard for passive LPs
 3. `./simulation-ui`: a UI dashboard for observing liquidity and orderflow simulation output. This is still a WIP.
+4. `./deck`: a standalone founder-style presentation app for the Squid pitch deck
 
 ```text
 .
 |-- src/             Solidity contracts and types
 |-- test/            Foundry tests and shared test harnesses
 |-- script/          Simulation harness and generated output
+|-- deck/            Standalone web presentation
 |-- squid-ui/        Passive LP dashboard
 `-- simulation-ui/   Simulation dashboard (WIP)
 ```
@@ -379,8 +382,8 @@ Install and run:
 
 ```sh
 cd squid-ui
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 This app runs on port `3001`.
@@ -395,17 +398,36 @@ Install and run:
 
 ```sh
 cd simulation-ui
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 This app is still a WIP. It is intended to visualize the generated simulation artifact at [script/output/anvil-simulation.json](/Users/saumay/Workspace/gh-saumay/squid/script/output/anvil-simulation.json).
+
+### 4. `deck`
+
+Prerequisites:
+
+- Node.js installed
+- `pnpm` installed
+
+Install and run:
+
+```sh
+cd deck
+pnpm install
+pnpm dev
+```
+
+This app runs on port `3002`.
+
+For Vercel, connect the repo and set the project Root Directory to `deck`. That ensures Vercel installs dependencies and builds only the presentation app instead of `squid-ui` or `simulation-ui`.
 
 ## External Dependencies
 
 - Uniswap v4 core and periphery via the `lib/v4-hooks-public` submodule
 - Foundry standard library via the `lib/forge-std` submodule
-- Next.js, React, and related frontend dependencies for the dashboard apps
+- Next.js, React, and related frontend dependencies for the dashboard and presentation apps
 
 Remappings and simulation output filesystem permissions are defined in [foundry.toml](/Users/saumay/Workspace/gh-saumay/squid/foundry.toml).
 
