@@ -111,3 +111,43 @@ code {
   font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
   font-variant-ligatures: none;
 }
+
+.deck-shell {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.deck-shell-horizontal {
+  overscroll-behavior: none;
+}
+
+.deck-track {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+}
+
+.deck-track::-webkit-scrollbar {
+  display: none;
+}
+
+.deck-slide {
+  scroll-snap-align: center;
+}
+
+.deck-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 90px 90px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 88%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .deck-track {
+    scroll-behavior: auto;
+  }
+}
