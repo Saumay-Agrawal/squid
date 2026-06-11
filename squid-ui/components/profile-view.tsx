@@ -43,7 +43,7 @@ const PROFILE_GROUP_DETAIL_METRICS = {
   utilization: "Share of total pool liquidity currently active at the final tick, with the peak share shown for comparison.",
   lps: "Active LP wallets over lifetime LP wallets for this pool, with retained share shown underneath.",
   positions: "Active positions over total seeded positions for this pool, with active share shown underneath.",
-  tradeFlow: "Total seeded swaps executed against this pool, with direction split shown underneath.",
+  tradeFlow: "Total seeded swaps executed against this pool, with direction split and skewness percentage shown underneath.",
 } as const;
 
 const POSITION_ROW_METRICS = {
@@ -350,8 +350,8 @@ function ProfilePoolsBoard({
                           title="Trade flow"
                           tooltip={PROFILE_GROUP_DETAIL_METRICS.tradeFlow}
                           value={pool ? String(pool.totalSwapCount) : "N/A"}
-                          detail={pool ? `${pool.zeroToOneSwapCount}:${pool.oneToZeroSwapCount} direction` : null}
-                          note="Seeded swaps executed against this pool and their direction split."
+                          detail={pool ? `${formatBps(pool.flowSkewnessBps)} skew · ${pool.zeroToOneSwapCount}:${pool.oneToZeroSwapCount} direction` : null}
+                          note="Seeded swaps executed against this pool, plus ratio-based skewness and direction split."
                           icon={ArrowRightLeft}
                         />
                       </div>

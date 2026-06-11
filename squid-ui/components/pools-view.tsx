@@ -15,14 +15,14 @@ const SUMMARY_METRICS = {
   utilization: "Share of total liquidity currently active at the pool's final tick, with the peak share shown for comparison.",
   lps: "Active LP wallets over lifetime LP wallets for this pool, with the retained share shown below.",
   positions: "Active positions over total seeded positions for this pool, with the active share shown below.",
-  tradeFlow: "Total seeded swaps executed against the pool, with the direction split shown below.",
+  tradeFlow: "Total seeded swaps executed against the pool, with direction split and skewness percentage shown below.",
 } as const;
 
 const TOP_CARD_METRICS = {
   pools: "Active pools have at least one active position at the final tick. Total pools counts every seeded pool snapshot.",
   liquidityUtilisation: "Average share of liquidity currently in range across all pools, with the average peak in-range share shown below.",
   lpRetention: "Average share of lifetime LP wallets that still have an active position across all pools.",
-  tradeFlow: "Average directional swap-flow skewness across all pools based on seeded swap counts.",
+  tradeFlow: "Average swap-direction skewness across all pools, derived from the ratio between the dominant and minority seeded swap counts.",
 } as const;
 
 const DETAIL_METRICS = {
@@ -37,6 +37,7 @@ const DETAIL_METRICS = {
   totalSwapCount: "Total number of seeded swaps executed against this pool.",
   zeroToOneSwaps: "Number of seeded swaps that moved from token0 into token1.",
   oneToZeroSwaps: "Number of seeded swaps that moved from token1 into token0.",
+  flowSkewness: "Skewness percentage derived from the ratio between the dominant and minority swap directions.",
   activeLps: "Number of LP wallets with at least one active position at the final tick.",
   lpRetention: "Share of lifetime LP wallets that still have an active position in range.",
   activePositions: "Number of positions currently in range, with total seeded positions shown below.",
@@ -95,7 +96,7 @@ export function PoolsView({
           title="Trade flow"
           tooltip={TOP_CARD_METRICS.tradeFlow}
           value={formatBps(averageFlowSkewnessBps)}
-          note="Average directional skewness of seeded trade flow across all pools."
+          note="Average ratio-based skewness of seeded trade flow across all pools."
           icon={ArrowRightLeft}
         />
       </section>
@@ -173,7 +174,10 @@ export function PoolsView({
                           <MetricStack primary={`${pool.activePositionCount}/${pool.totalPositionCount}`} secondary={`${formatBps(pool.activePositionPercentageBps)} active`} />
                         </TableCell>
                         <TableCell>
-                          <MetricStack primary={String(pool.totalSwapCount)} secondary={`${pool.zeroToOneSwapCount}:${pool.oneToZeroSwapCount} direction`} />
+                          <MetricStack
+                            primary={formatBps(pool.flowSkewnessBps)}
+                            secondary={`${pool.zeroToOneSwapCount}:${pool.oneToZeroSwapCount} direction`}
+                          />
                         </TableCell>
                         <TableCell className="pr-6 text-right">
                           <button
@@ -248,6 +252,12 @@ export function PoolsView({
                                         label: "One to zero swaps",
                                         value: String(pool.oneToZeroSwapCount),
                                         tooltip: DETAIL_METRICS.oneToZeroSwaps,
+                                      },
+                                      {
+                                        label: "Flow skewness",
+                                        value: formatBps(pool.flowSkewnessBps),
+                                        detail: `${pool.zeroToOneSwapCount}:${pool.oneToZeroSwapCount} direction`,
+                                        tooltip: DETAIL_METRICS.flowSkewness,
                                       },
                                     ]}
                                   />

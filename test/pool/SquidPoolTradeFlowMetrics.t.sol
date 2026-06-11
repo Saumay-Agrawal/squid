@@ -22,7 +22,7 @@ contract SquidPoolTradeFlowMetricsTest is SquidTestBase {
         assertEq(summary.tradeFlow.totalSwapCount, 1);
         assertEq(summary.tradeFlow.zeroToOneSwapCount, 1);
         assertEq(summary.tradeFlow.oneToZeroSwapCount, 0);
-        assertEq(summary.tradeFlow.flowSkewnessBps, 0);
+        assertEq(summary.tradeFlow.flowSkewnessBps, 10_000);
     }
 
     function test_firstOneToZeroSwapUpdatesDirectionalCounts() public {
@@ -34,7 +34,7 @@ contract SquidPoolTradeFlowMetricsTest is SquidTestBase {
         assertEq(summary.tradeFlow.totalSwapCount, 1);
         assertEq(summary.tradeFlow.zeroToOneSwapCount, 0);
         assertEq(summary.tradeFlow.oneToZeroSwapCount, 1);
-        assertEq(summary.tradeFlow.flowSkewnessBps, 0);
+        assertEq(summary.tradeFlow.flowSkewnessBps, 10_000);
     }
 
     function test_balancedBidirectionalFlowHasZeroSkewness() public {
@@ -62,6 +62,22 @@ contract SquidPoolTradeFlowMetricsTest is SquidTestBase {
         assertEq(summary.tradeFlow.zeroToOneSwapCount, 2);
         assertEq(summary.tradeFlow.oneToZeroSwapCount, 1);
         assertEq(summary.tradeFlow.flowSkewnessBps, 10_000);
+    }
+
+    function test_stronglyImbalancedFlowCanExceedOneHundredPercentSkewness() public {
+        PoolKey memory poolKey = _initializePoolWithActiveLiquidity();
+
+        swap(poolKey, true, -1e16, "");
+        swap(poolKey, true, -1e16, "");
+        swap(poolKey, true, -1e16, "");
+        swap(poolKey, true, -1e16, "");
+        swap(poolKey, false, -1e16, "");
+
+        PoolSummary memory summary = hook.getPoolSummary(poolKey.toId());
+        assertEq(summary.tradeFlow.totalSwapCount, 5);
+        assertEq(summary.tradeFlow.zeroToOneSwapCount, 4);
+        assertEq(summary.tradeFlow.oneToZeroSwapCount, 1);
+        assertEq(summary.tradeFlow.flowSkewnessBps, 30_000);
     }
 
     function _initializePoolWithActiveLiquidity() private returns (PoolKey memory poolKey) {

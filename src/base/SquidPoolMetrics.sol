@@ -240,10 +240,14 @@ abstract contract SquidPoolMetrics {
         pure
         returns (uint32)
     {
-        if (zeroToOneSwapCount == 0 || oneToZeroSwapCount == 0) return 0;
+        if (zeroToOneSwapCount == 0 && oneToZeroSwapCount == 0) return 0;
+        if (zeroToOneSwapCount == 0 || oneToZeroSwapCount == 0) return BPS_DENOMINATOR;
 
-        uint256 ratioBps = (uint256(zeroToOneSwapCount) * BPS_DENOMINATOR) / uint256(oneToZeroSwapCount);
-        return ratioBps >= BPS_DENOMINATOR ? uint32(ratioBps - BPS_DENOMINATOR) : uint32(BPS_DENOMINATOR - ratioBps);
+        uint32 maxSwapCount = zeroToOneSwapCount >= oneToZeroSwapCount ? zeroToOneSwapCount : oneToZeroSwapCount;
+        uint32 minSwapCount = zeroToOneSwapCount < oneToZeroSwapCount ? zeroToOneSwapCount : oneToZeroSwapCount;
+        uint256 ratioBps = (uint256(maxSwapCount) * BPS_DENOMINATOR) / uint256(minSwapCount);
+
+        return uint32(ratioBps - BPS_DENOMINATOR);
     }
 
     function _requirePoolRegistered(PoolId poolId) internal view {
