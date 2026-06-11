@@ -290,34 +290,34 @@ The base harness currently seeds:
 ### Simulation action phases
 
 **Bootstrap**
-✅ Creates 5 ETH/USDC pools with different fee tiers and range widths.
-✅ Adds the initial LP positions so each pool starts with liquidity before trading begins.
+<br>✅ Creates 5 ETH/USDC pools with different fee tiers and range widths.
+<br>✅ Adds the initial LP positions so each pool starts with liquidity before trading begins.
 
 **Price discovery**
-✅ Simulates early market activity as traders start buying and selling across different pools.
-✅ Pushes price in different directions to show how the tighter and wider pools react to initial order flow.
-✅ Establishes the first round of swap volume that Squid can use to update pool and position metrics.
+<br>✅ Simulates early market activity as traders start buying and selling across different pools.
+<br>✅ Pushes price in different directions to show how the tighter and wider pools react to initial order flow.
+<br>✅ Establishes the first round of swap volume that Squid can use to update pool and position metrics.
 
 **High flow**
-✅ Simulates a busier market period with more frequent trading.
-✅ Creates heavier order flow in the tighter and standard pools.
-✅ Shows how active liquidity, swap counts, and trade-flow metrics change during sustained activity.
+<br>✅ Simulates a busier market period with more frequent trading.
+<br>✅ Creates heavier order flow in the tighter and standard pools.
+<br>✅ Shows how active liquidity, swap counts, and trade-flow metrics change during sustained activity.
 
 **Rebalance**
-✅ Simulates LPs adjusting their positions after the earlier price movement.
-✅ Moves some liquidity into new price ranges by partially closing old positions and reopening new ones.
-✅ Includes a few partial exits to show how position accounting changes when LPs scale down exposure.
-✅ Adds more trades after the rebalance so the updated positions are tested under fresh market activity.
+<br>✅ Simulates LPs adjusting their positions after the earlier price movement.
+<br>✅ Moves some liquidity into new price ranges by partially closing old positions and reopening new ones.
+<br>✅ Includes a few partial exits to show how position accounting changes when LPs scale down exposure.
+<br>✅ Adds more trades after the rebalance so the updated positions are tested under fresh market activity.
 
 **Stress**
-✅ Simulates a harsher market phase with stronger sell pressure.
-✅ Pushes some pools further away from their earlier equilibrium.
-✅ Shows how Squid responds when market conditions become less favorable for some LP positions.
+<br>✅ Simulates a harsher market phase with stronger sell pressure.
+<br>✅ Pushes some pools further away from their earlier equilibrium.
+<br>✅ Shows how Squid responds when market conditions become less favorable for some LP positions.
 
 **Late exit**
-✅ Simulates the end of the scenario as some LPs leave the market entirely and others reduce exposure.
-✅ Tests full exits and partial exits after the earlier trading and stress phases.
-✅ Finishes with a final set of swaps so the end-state metrics reflect both trader activity and LP exits.
+<br>✅ Simulates the end of the scenario as some LPs leave the market entirely and others reduce exposure.
+<br>✅ Tests full exits and partial exits after the earlier trading and stress phases.
+<br>✅ Finishes with a final set of swaps so the end-state metrics reflect both trader activity and LP exits.
 
 ## Setup
 
