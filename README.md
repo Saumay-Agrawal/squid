@@ -195,72 +195,72 @@ The test suite under [test](/Users/saumay/Workspace/gh-saumay/squid/test) is spl
 #### Helpers
 
 **SquidTestBase.t.sol**
-✅ Provides the shared deployment harness for the pool manager, hook, routers, and seeded environment used across the suite.<br>
+<br>✅ Provides the shared deployment harness for the pool manager, hook, routers, and seeded environment used across the suite.
 
 **TestTokens.sol**
-✅ Provides mock tokens used by the tests and simulation setup.<br>
+<br>✅ Provides mock tokens used by the tests and simulation setup.
 
 #### Pool Tests
 
 **SquidPoolInitialization.t.sol**
-✅ Checks that pool metrics are stored when a pool is initialized.<br>
-✅ Checks that symbol lookup failures do not block pool initialization.<br>
-✅ Checks that the current price view reads live pool state.<br>
-✅ Checks that the TWAP view reverts until oracle support is added.<br>
+<br>✅ Checks that pool metrics are stored when a pool is initialized.
+<br>✅ Checks that symbol lookup failures do not block pool initialization.
+<br>✅ Checks that the current price view reads live pool state.
+<br>✅ Checks that the TWAP view reverts until oracle support is added.
 
 **SquidPoolLiquidityMetrics.t.sol**
-✅ Checks that adding liquidity updates pool liquidity metrics.<br>
-✅ Checks that out-of-range liquidity only changes total liquidity, not active liquidity.<br>
-✅ Checks that removing liquidity updates both total and active liquidity correctly.<br>
-✅ Checks that swaps refresh active liquidity without lowering the recorded peak.<br>
-✅ Checks that peak liquidity utilization is computed from total liquidity at the peak.<br>
+<br>✅ Checks that adding liquidity updates pool liquidity metrics.
+<br>✅ Checks that out-of-range liquidity only changes total liquidity, not active liquidity.
+<br>✅ Checks that removing liquidity updates both total and active liquidity correctly.
+<br>✅ Checks that swaps refresh active liquidity without lowering the recorded peak.
+<br>✅ Checks that peak liquidity utilization is computed from total liquidity at the peak.
 
 **SquidPoolLpMetrics.t.sol**
-✅ Checks that the first LP sets active LP count, lifetime LP count, and retention correctly.<br>
-✅ Checks that multiple positions from the same LP are only counted once for LP-level metrics.<br>
-✅ Checks that an LP exit and re-entry does not reset the lifetime LP count.<br>
-✅ Checks that retention is tracked correctly when multiple LPs enter and exit.<br>
+<br>✅ Checks that the first LP sets active LP count, lifetime LP count, and retention correctly.
+<br>✅ Checks that multiple positions from the same LP are only counted once for LP-level metrics.
+<br>✅ Checks that an LP exit and re-entry does not reset the lifetime LP count.
+<br>✅ Checks that retention is tracked correctly when multiple LPs enter and exit.
 
 **SquidPoolPositionMetrics.t.sol**
-✅ Checks that the first in-range position updates both active and total position counts.<br>
-✅ Checks that the first out-of-range position only updates the total position count.<br>
-✅ Checks that multiple positions are counted independently.<br>
-✅ Checks that a full close removes the active count while preserving the total historical count.<br>
-✅ Checks that a swap moving price out of range updates the active position count.<br>
-✅ Checks that a swap moving price back into range updates the active position count.<br>
+<br>✅ Checks that the first in-range position updates both active and total position counts.
+<br>✅ Checks that the first out-of-range position only updates the total position count.
+<br>✅ Checks that multiple positions are counted independently.
+<br>✅ Checks that a full close removes the active count while preserving the total historical count.
+<br>✅ Checks that a swap moving price out of range updates the active position count.
+<br>✅ Checks that a swap moving price back into range updates the active position count.
 
 **SquidPoolTradeFlowMetrics.t.sol**
-✅ Checks that the first zero-to-one swap updates directional flow counts correctly.<br>
-✅ Checks that the first one-to-zero swap updates directional flow counts correctly.<br>
-✅ Checks that balanced bidirectional flow produces zero skewness.<br>
-✅ Checks that imbalanced flow reports non-zero skewness.<br>
-✅ Checks that strongly imbalanced flow can exceed 100% skewness under the current metric definition.<br>
+<br>✅ Checks that the first zero-to-one swap updates directional flow counts correctly.
+<br>✅ Checks that the first one-to-zero swap updates directional flow counts correctly.
+<br>✅ Checks that balanced bidirectional flow produces zero skewness.
+<br>✅ Checks that imbalanced flow reports non-zero skewness.
+<br>✅ Checks that strongly imbalanced flow can exceed 100% skewness under the current metric definition.
 
 **SquidReactivePoolGuard.t.sol**
-✅ Checks that the reactive callback can halt and later unhalt new liquidity adds.<br>
-✅ Checks that the breach event is not emitted repeatedly while the pool remains below the threshold.<br>
-✅ Checks that the pool is not treated as recovered while it is still below the recovery threshold.<br>
+<br>✅ Checks that the reactive callback can halt and later unhalt new liquidity adds.
+<br>✅ Checks that the breach event is not emitted repeatedly while the pool remains below the threshold.
+<br>✅ Checks that the pool is not treated as recovered while it is still below the recovery threshold.
 
 #### Position Tests
 
 **SquidPositionLiquidity.t.sol**
-✅ Checks that a position tracks both total liquidity and active liquidity correctly.<br>
-✅ Checks that swaps refresh the active liquidity of a position.<br>
-✅ Checks that position swap volume is tracked both for lifetime activity and for in-range activity.<br>
+<br>✅ Checks that a position tracks both total liquidity and active liquidity correctly.
+<br>✅ Checks that swaps refresh the active liquidity of a position.
+<br>✅ Checks that position swap volume is tracked both for lifetime activity and for in-range activity.
 
 **SquidPositionMsgSenderRouter.t.sol**
-✅ Checks that the msg.sender-aware router tracks the LP owner separately from the core owner.<br>
+<br>✅ Checks that the msg.sender-aware router tracks the LP owner separately from the core owner.
 
 **SquidPositionPnL.t.sol**
-✅ Checks that open position PnL matches the current position state.<br>
-✅ Checks that partial liquidity removal reduces principal on a pro-rata basis.<br>
-✅ Checks that pending fees are included in PnL after swap activity.<br>
+<br>✅ Checks that open position PnL matches the current position state.
+<br>✅ Checks that partial liquidity removal reduces principal on a pro-rata basis.
+<br>✅ Checks that pending fees are included in PnL after swap activity.
 
 **SquidPositionSummary.t.sol**
-✅ Checks that adding liquidity stores position metrics.<br>
-✅ Checks that repeated updates to the same canonical position update a single stored record.<br>
-✅ Checks that using a different salt creates a distinct position record.<br>
-✅ Checks that a position stays active after a partial removal and closes after a full removal.<br>
+<br>✅ Checks that adding liquidity stores position metrics.
+<br>✅ Checks that repeated updates to the same canonical position update a single stored record.
+<br>✅ Checks that using a different salt creates a distinct position record.
+<br>✅ Checks that a position stays active after a partial removal and closes after a full removal.
 
 ### Script structure
 
