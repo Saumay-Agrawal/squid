@@ -423,6 +423,23 @@ This app runs on port `3002`.
 
 For Vercel, connect the repo and set the project Root Directory to `deck`. That ensures Vercel installs dependencies and builds only the presentation app instead of `squid-ui` or `simulation-ui`.
 
+For Cloudflare Pages static hosting:
+
+```sh
+cd deck
+pnpm install
+pnpm build
+```
+
+Then deploy the generated `deck/out` directory with these settings:
+
+- Framework preset: `Next.js`
+- Root directory: `deck`
+- Build command: `pnpm build`
+- Build output directory: `out`
+
+If you want to skip Cloudflare's repo build step, you can also upload the prebuilt `deck/out` folder directly through Pages.
+
 ## External Dependencies
 
 - Uniswap v4 core and periphery via the `lib/v4-hooks-public` submodule
