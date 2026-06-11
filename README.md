@@ -79,6 +79,59 @@ At runtime, `Squid.sol` is the hook entrypoint. It wires Uniswap v4 lifecycle ca
 - `SquidPoolMetrics`: pool registration, balances, liquidity utilization, LP counts, position counts, and trade-flow statistics
 - `SquidPositionMetrics`: position identity, liquidity state, swap volume, principal tracking, fee state, and PnL
 
+### Metrics currently shown in the UI
+
+The current `squid-ui` reads a local seeded artifact at [script/output/anvil-simulation.json](/Users/saumay/Workspace/gh-saumay/squid/script/output/anvil-simulation.json) through [squid-ui/lib/dashboard.ts](/Users/saumay/Workspace/gh-saumay/squid/squid-ui/lib/dashboard.ts). That artifact contains finalized pool summaries, current pool state, and per-position snapshots derived from the on-chain metric contracts:
+
+- pool-level values come from `PoolSummary` and `getCurrentPoolState`, exposed by [src/base/SquidPoolMetrics.sol](/Users/saumay/Workspace/gh-saumay/squid/src/base/SquidPoolMetrics.sol)
+- position-level values come from `PositionSummary`, `PositionLiquidity`, and `PositionPnL`, exposed by [src/base/SquidPositionMetrics.sol](/Users/saumay/Workspace/gh-saumay/squid/src/base/SquidPositionMetrics.sol)
+- UI percentages are rendered from stored basis-point fields or from direct ratio helpers in [squid-ui/lib/utils.ts](/Users/saumay/Workspace/gh-saumay/squid/squid-ui/lib/utils.ts)
+
+#### Pool metrics
+
+These are the metrics currently surfaced in [squid-ui/components/pools-view.tsx](/Users/saumay/Workspace/gh-saumay/squid/squid-ui/components/pools-view.tsx) and reused in the account profile's pool drilldown.
+
+| Metric name | How it is sourced / tracked / calculated | What it signifies |
+| --- | --- | --- |
+| Pools | UI counts pools with `activePositionCount > 0` and shows that against total `poolSummaries.length`. | How many tracked pools still have at least one active in-range position. |
+| Liquidity utilisation | Per pool, `liquidityUtilisationBps = activeLiquidity / totalLiquidity` in basis points, computed in `_calculateUtilisationBps`; top card shows the average across pools. | Share of tracked pool liquidity currently in range. |
+| Peak liquidity utilisation | Per pool, `peakLiquidityUtilisationBps = peakActiveLiquidity / totalLiquidityAtPeakActive`; shown alongside current utilization and averaged in the top card detail. | Best in-range liquidity share the pool reached during the seeded run. |
+| LP retention | Per pool, `lpRetentionBps = activeLpCount / lifetimeLpCount` in basis points; top card shows the average across pools. | How much LP participation has been retained from all wallets that ever opened an active position in the pool. |
+| Trade flow | Top card shows the average `flowSkewnessBps` across pools. Per pool it is stored by `_calculateFlowSkewnessBps(max(directionCount)/min(directionCount) - 1)` with `10,000 bps` when all swaps went one way. | How imbalanced seeded swap direction has been. Higher values mean more one-sided flow. |
+| Utilization | Pool board row uses `liquidityUtilisationBps` with `peakLiquidityUtilisationBps` as secondary detail. | Current versus historical in-range liquidity efficiency for a specific pool. |
+| LPs | Pool board row shows `activeLpCount / lifetimeLpCount`. | Current LP wallet participation relative to all LPs ever counted for that pool. |
+| Positions | Pool board row shows `activePositionCount / totalPositionCount`. | How many tracked positions are still active in the pool. |
+| Position activity | Detail card shows stored `activePositionPercentageBps = activePositionCount / totalPositionCount`. | Percent of seeded positions that remain active. |
+| Trade flow direction split | Pool board/detail use `zeroToOneSwapCount`, `oneToZeroSwapCount`, and `totalSwapCount`, incremented in `_recordPoolSwap`. | Absolute count and direction of seeded swaps through the pool. |
+| Current tick | UI reads `currentPoolState.tick` from the artifact. | The pool's final seeded tick, which drives in-range status for positions and active liquidity. |
+| Fee tier | UI reads `poolSummary.fee`. | The configured swap fee tier for the pool. |
+| Tick spacing | UI reads `poolSummary.tickSpacing`. | The minimum tick interval allowed for positions in the pool. |
+| LP fee | UI reads `currentPoolState.lpFee`. | The LP-facing fee setting currently active in pool state. |
+| Protocol fee | UI reads `currentPoolState.protocolFee`. | The protocol-owned fee setting currently active in pool state. |
+| Initial amounts | `initialToken0Amount` and `initialToken1Amount` are first snapshotted in `_applyPoolDelta` once pool balances become non-zero. | The first funded token balances observed for the pool in the seeded scenario. |
+| Current amounts | `currentToken0Amount` and `currentToken1Amount` are updated on each liquidity add, remove, and swap via `_applyPoolDelta`. | Final tracked token balances held by the pool after seeded activity. |
+| Total fees accrued | `totalFeeAccruedToken0` and `totalFeeAccruedToken1` are increased from `feesAccrued` in `_recordPoolFeesAccrued` during liquidity updates. | Lifetime fees attributed to the pool metrics layer across both tokens. |
+| Active LPs | Detail card shows `activeLpCount` with `lifetimeLpCount` as context. | Number of LP wallets that still have at least one active position in the pool. |
+
+#### Position metrics
+
+These are the metrics currently surfaced in [squid-ui/components/profile-view.tsx](/Users/saumay/Workspace/gh-saumay/squid/squid-ui/components/profile-view.tsx) for per-position drilldown, with the LP view rendering the same position structure.
+
+| Metric name | How it is sourced / tracked / calculated | What it signifies |
+| --- | --- | --- |
+| Position ID / identifier | UI shows `position.positionId`, which is derived on-chain by `keccak256(owner, poolId, tickLower, tickUpper, salt)` in `getPositionId`. | The unique tracked identifier for a Squid position. |
+| Status | UI reads `position.summary.active`; on-chain this is refreshed from current position liquidity and in-range checks during sync. | Whether the position is still funded and, in the detailed position context, effectively active in the final seeded state. |
+| Range | UI shows `tickLower` and `tickUpper` from `PositionSummary`. | The tick interval over which the position can be active. |
+| Range width | UI calculates `tickUpper - tickLower`. | How wide or narrow the position's liquidity band is. |
+| Created | UI shows `createdTimestamp` and `createdBlock` from `PositionSummary`. | When the position first entered the tracked system. |
+| Position age | UI shows `age`; on-chain `getPositionSummary` derives it as `block.timestamp - createdTimestamp`, and the seeded artifact stores the final value. | How long the position has existed in the scenario. |
+| Token0 invested / Token1 invested | UI reads `principalAmount0` and `principalAmount1`; on-chain principal is increased on adds from `delta - feesAccrued` and reduced pro rata on liquidity removal. | The original principal capital still attributed to the position in each token. |
+| Token0 current / Token1 current | UI reads `currentAmount0` and `currentAmount1` from `PositionPnL`; on-chain these are `live liquidity amounts + pending uncollected fees`. | What the position currently represents in each token at the final pool price. |
+| Token0 fees / Token1 fees | UI reads `feeAccumulated0` and `feeAccumulated1`; on-chain these are `realized fees + pending uncollected fees`. | Total fees earned by the position in each token. |
+| Active liquidity | UI formats `activeLiquidity / liquidity` with `formatRatioPercent`; on-chain `activeLiquidity` is set to full position liquidity only when the current tick is inside `[tickLower, tickUpper)`. | Share of the position's liquidity that is currently in range. |
+| Token0 active swap volume / Token1 active swap volume | UI formats `activeSwapVolume0 / lifetimeSwapVolume0` and `activeSwapVolume1 / lifetimeSwapVolume1`; on swaps, lifetime volume always increments and active volume increments only if the position is in range. | How much of observed swap volume happened while the position was actually active. |
+| Net PnL | UI reads `netPnl0` and `netPnl1` from `PositionPnL`; on-chain each token's PnL is `currentAmount - principalAmount`. | Net outcome of the position by token after combining current holdings and fees versus tracked principal. |
+
 The reactive pool-guard path is a prototype integration surface built around emitted events and mocked callbacks. It is useful for review, but should not be read as production-ready automation.
 
 ### Current deployment posture
