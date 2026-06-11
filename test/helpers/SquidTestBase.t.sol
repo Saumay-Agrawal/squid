@@ -20,10 +20,10 @@ abstract contract SquidTestBase is Test, Deployers {
     function setUp() public virtual {
         deployFreshManagerAndRouters();
 
-        uint160 flags = Hooks.AFTER_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-            | Hooks.AFTER_SWAP_FLAG;
+        uint160 flags = Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_INITIALIZE_FLAG
+            | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_SWAP_FLAG;
         hook = Squid(address(uint160(type(uint160).max & clearAllHookPermissionsMask | flags)));
-        deployCodeTo("Squid", abi.encode(manager), address(hook));
+        deployCodeTo("Squid", abi.encode(manager, address(this)), address(hook));
     }
 
     function _buildPoolKey(address tokenA, address tokenB) internal view returns (PoolKey memory) {

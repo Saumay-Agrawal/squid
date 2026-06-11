@@ -16,6 +16,8 @@ abstract contract SquidPoolMetrics {
     using PoolIdLibrary for PoolKey;
 
     uint32 internal constant BPS_DENOMINATOR = 10_000;
+    uint32 internal constant ACTIVE_POSITION_BREACH_THRESHOLD_BPS = 8_000;
+    uint32 internal constant ACTIVE_POSITION_RECOVERY_THRESHOLD_BPS = 8_500;
 
     error PoolAlreadyRegistered(bytes32 poolId);
     error PoolNotRegistered(bytes32 poolId);
@@ -26,10 +28,31 @@ abstract contract SquidPoolMetrics {
     mapping(PoolId poolId => bool initialized) internal poolAmountsInitializedById;
     mapping(PoolId poolId => mapping(address owner => uint32 count)) internal activePositionCountByPoolAndOwner;
     mapping(PoolId poolId => mapping(address owner => bool counted)) internal hasCountedOwnerForPool;
+    mapping(PoolId poolId => bool halted) internal addLiquidityHaltedByPool;
+    mapping(PoolId poolId => bool breached) internal activePositionThresholdBreachedByPool;
+
+    event PoolActivePositionThresholdBreached(
+        bytes32 poolId, uint32 activePositionCount, uint32 totalPositionCount, uint32 activePositionPercentageBps
+    );
+    event PoolActivePositionThresholdRecovered(
+        bytes32 poolId, uint32 activePositionCount, uint32 totalPositionCount, uint32 activePositionPercentageBps
+    );
+    event PoolLiquidityAddsHalted(bytes32 poolId);
+    event PoolLiquidityAddsResumed(bytes32 poolId);
 
     function getPoolSummary(PoolId poolId) external view returns (PoolSummary memory summary) {
         summary = poolSummariesById[poolId];
         if (!summary.initialized) revert PoolNotRegistered(PoolId.unwrap(poolId));
+    }
+
+    function isPoolAddLiquidityHalted(PoolId poolId) external view returns (bool halted) {
+        _requirePoolRegistered(poolId);
+        halted = addLiquidityHaltedByPool[poolId];
+    }
+
+    function isPoolActivePositionThresholdBreached(PoolId poolId) external view returns (bool breached) {
+        _requirePoolRegistered(poolId);
+        breached = activePositionThresholdBreachedByPool[poolId];
     }
 
     function getCurrentPoolState(PoolId poolId)
@@ -203,6 +226,7 @@ abstract contract SquidPoolMetrics {
         positions.totalPositionCount += 1;
         positions.activePositionPercentageBps =
             _calculateCountBps(positions.activePositionCount, positions.totalPositionCount);
+        _syncActivePositionThresholdState(poolId, positions);
     }
 
     function _recordPoolPositionActivityChange(PoolId poolId, bool wasActive, bool isActive) internal virtual {
@@ -218,6 +242,23 @@ abstract contract SquidPoolMetrics {
 
         positions.activePositionPercentageBps =
             _calculateCountBps(positions.activePositionCount, positions.totalPositionCount);
+        _syncActivePositionThresholdState(poolId, positions);
+    }
+
+    function _isPoolAddLiquidityHalted(PoolId poolId) internal view returns (bool halted) {
+        halted = addLiquidityHaltedByPool[poolId];
+    }
+
+    function _setPoolAddLiquidityHalted(PoolId poolId, bool halted) internal {
+        if (addLiquidityHaltedByPool[poolId] == halted) return;
+
+        addLiquidityHaltedByPool[poolId] = halted;
+
+        if (halted) {
+            emit PoolLiquidityAddsHalted(PoolId.unwrap(poolId));
+        } else {
+            emit PoolLiquidityAddsResumed(PoolId.unwrap(poolId));
+        }
     }
 
     function _liquidityDeltaToUint128(int256 liquidityDelta) private pure returns (uint128 liquidity) {
@@ -272,6 +313,29 @@ abstract contract SquidPoolMetrics {
     function _poolNegativeAmount1(BalanceDelta delta) private pure returns (uint256 amount) {
         int128 value = BalanceDeltaLibrary.amount1(delta);
         if (value < 0) amount = uint256(uint128(-value));
+    }
+
+    function _syncActivePositionThresholdState(PoolId poolId, PoolPositions storage positions) private {
+        bool breached = activePositionThresholdBreachedByPool[poolId];
+        uint32 activePositionPercentageBps = positions.activePositionPercentageBps;
+
+        if (!breached && activePositionPercentageBps < ACTIVE_POSITION_BREACH_THRESHOLD_BPS) {
+            activePositionThresholdBreachedByPool[poolId] = true;
+            emit PoolActivePositionThresholdBreached(
+                PoolId.unwrap(poolId),
+                positions.activePositionCount,
+                positions.totalPositionCount,
+                activePositionPercentageBps
+            );
+        } else if (breached && activePositionPercentageBps >= ACTIVE_POSITION_RECOVERY_THRESHOLD_BPS) {
+            activePositionThresholdBreachedByPool[poolId] = false;
+            emit PoolActivePositionThresholdRecovered(
+                PoolId.unwrap(poolId),
+                positions.activePositionCount,
+                positions.totalPositionCount,
+                activePositionPercentageBps
+            );
+        }
     }
 
     function _poolManager() internal view virtual returns (IPoolManager);

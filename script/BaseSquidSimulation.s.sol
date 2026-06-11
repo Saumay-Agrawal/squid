@@ -132,10 +132,10 @@ abstract contract BaseSquidSimulation is Script, Deployers {
     function _setUpSimulation() internal {
         _deployScriptManagerAndRouters();
 
-        uint160 flags = Hooks.AFTER_INITIALIZE_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-            | Hooks.AFTER_SWAP_FLAG;
+        uint160 flags = Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_INITIALIZE_FLAG
+            | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_SWAP_FLAG;
         hook = Squid(address(uint160(type(uint160).max & clearAllHookPermissionsMask | flags)));
-        deployCodeTo("Squid", abi.encode(manager), address(hook));
+        deployCodeTo("Squid", abi.encode(manager, address(0)), address(hook));
 
         msgSenderLiquidityRouter = new PoolModifyLiquidityTestWithMsgSender(manager);
 

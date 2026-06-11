@@ -14,13 +14,52 @@ import {SquidPoolMetrics} from "./base/SquidPoolMetrics.sol";
 import {SquidPositionMetrics} from "./base/SquidPositionMetrics.sol";
 
 contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
-    constructor(IPoolManager _manager) BaseHook(_manager) {}
+    error PoolAddLiquidityHalted(bytes32 poolId);
+    error UnauthorizedPoolGuardOperator(address caller);
+
+    address public poolGuardOperator;
+
+    constructor(IPoolManager _manager, address _poolGuardOperator) BaseHook(_manager) {
+        poolGuardOperator = _poolGuardOperator;
+    }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory permissions) {
+        permissions.beforeAddLiquidity = true;
         permissions.afterInitialize = true;
         permissions.afterAddLiquidity = true;
         permissions.afterRemoveLiquidity = true;
         permissions.afterSwap = true;
+    }
+
+    function setPoolGuardOperator(address newPoolGuardOperator) external {
+        address currentOperator = poolGuardOperator;
+        if (currentOperator != address(0) && msg.sender != currentOperator) {
+            revert UnauthorizedPoolGuardOperator(msg.sender);
+        }
+
+        poolGuardOperator = newPoolGuardOperator;
+    }
+
+    function haltPoolLiquidityAdds(bytes32 poolId) external {
+        _onlyPoolGuardOperator();
+        _requirePoolRegistered(PoolId.wrap(poolId));
+        _setPoolAddLiquidityHalted(PoolId.wrap(poolId), true);
+    }
+
+    function unhaltPoolLiquidityAdds(bytes32 poolId) external {
+        _onlyPoolGuardOperator();
+        _requirePoolRegistered(PoolId.wrap(poolId));
+        _setPoolAddLiquidityHalted(PoolId.wrap(poolId), false);
+    }
+
+    function _beforeAddLiquidity(address, PoolKey calldata key, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
+        PoolId poolId = key.toId();
+        if (_isPoolAddLiquidityHalted(poolId)) revert PoolAddLiquidityHalted(PoolId.unwrap(poolId));
+        return IHooks.beforeAddLiquidity.selector;
     }
 
     function _afterInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96, int24)
@@ -90,5 +129,9 @@ contract Squid is BaseHook, SquidPoolMetrics, SquidPositionMetrics {
         override(SquidPoolMetrics, SquidPositionMetrics)
     {
         SquidPoolMetrics._recordPoolPositionActivityChange(poolId, wasActive, isActive);
+    }
+
+    function _onlyPoolGuardOperator() private view {
+        if (msg.sender != poolGuardOperator) revert UnauthorizedPoolGuardOperator(msg.sender);
     }
 }
