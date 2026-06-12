@@ -81,6 +81,8 @@ At runtime, `Squid.sol` is the hook entrypoint. It wires Uniswap v4 lifecycle ca
 
 ### Metrics currently shown in the UI
 
+Note: these metrics are shown for demonstration purposes only and still need to be optimized for mathematical, logical, and analytical correctness.
+
 The current `squid-ui` reads a local seeded artifact at [script/output/anvil-simulation.json](/Users/saumay/Workspace/gh-saumay/squid/script/output/anvil-simulation.json) through [squid-ui/lib/dashboard.ts](/Users/saumay/Workspace/gh-saumay/squid/squid-ui/lib/dashboard.ts). That artifact contains finalized pool summaries, current pool state, and per-position snapshots derived from the on-chain metric contracts:
 
 - pool-level values come from `PoolSummary` and `getCurrentPoolState`, exposed by [src/base/SquidPoolMetrics.sol](/Users/saumay/Workspace/gh-saumay/squid/src/base/SquidPoolMetrics.sol)
