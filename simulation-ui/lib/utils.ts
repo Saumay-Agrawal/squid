@@ -52,3 +52,19 @@ export function formatSignedAmount(value: bigint) {
   return `${value > 0n ? "+" : "-"}${formatAmount(value > 0n ? value : -value)}`;
 }
 
+export function formatBps(value: number) {
+  return `${(value / 100).toFixed(2)}%`;
+}
+
+export function formatToken(value: bigint, decimals: number, symbol: string) {
+  const negative = value < 0n;
+  const absolute = negative ? -value : value;
+  const divisor = 10n ** BigInt(decimals);
+  const whole = absolute / divisor;
+  const fraction = ((absolute % divisor) * 100n) / divisor;
+  return `${negative ? "-" : ""}${whole.toLocaleString()}.${fraction.toString().padStart(2, "0")} ${symbol}`;
+}
+
+export function formatDate(timestamp: number) {
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(timestamp * 1000);
+}

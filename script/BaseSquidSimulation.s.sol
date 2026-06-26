@@ -118,6 +118,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
     PositionSeed[] internal positionSeeds;
     SwapSeed[] internal swapSeeds;
     ScenarioAction[] internal scenarioActions;
+    string[] internal historyCheckpoints;
 
     function _resetSimulationState() internal {
         delete poolSeeds;
@@ -126,6 +127,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         delete positionSeeds;
         delete swapSeeds;
         delete scenarioActions;
+        delete historyCheckpoints;
         delete usdcToken;
     }
 
@@ -655,6 +657,7 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 positionId: bytes32(0)
             })
         );
+        _captureHistoryCheckpoint();
     }
 
     function _recordScenarioAction(
@@ -678,6 +681,148 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 zeroForOne: zeroForOne,
                 positionId: positionId
             })
+        );
+        _captureHistoryCheckpoint();
+    }
+
+    function _captureHistoryCheckpoint() internal {
+        uint256 sequence = scenarioActions.length - 1;
+        ScenarioAction storage action = scenarioActions[sequence];
+        string memory poolJson =
+            action.poolIndex == type(uint8).max ? "null" : _poolHistoryJson(action.poolIndex);
+        string memory positionJson =
+            action.positionId == bytes32(0) ? "null" : _positionHistoryJson(action.positionId);
+
+        historyCheckpoints.push(
+            string(
+                abi.encodePacked(
+                    "{",
+                    '"sequence":',
+                    vm.toString(sequence),
+                    ',',
+                    '"phase":"',
+                    action.phase,
+                    '",',
+                    '"actionType":"',
+                    action.actionType,
+                    '",',
+                    '"blockNumber":',
+                    vm.toString(block.number),
+                    ',',
+                    '"timestamp":',
+                    vm.toString(block.timestamp),
+                    ',',
+                    '"poolIndex":',
+                    action.poolIndex == type(uint8).max ? "255" : vm.toString(uint256(action.poolIndex)),
+                    ',',
+                    '"positionId":"',
+                    vm.toString(action.positionId),
+                    '",',
+                    '"pool":',
+                    poolJson,
+                    ',',
+                    '"position":',
+                    positionJson,
+                    "}"
+                )
+            )
+        );
+    }
+
+    function _poolHistoryJson(uint8 poolIndex) internal view returns (string memory) {
+        PoolSeed storage pool = poolSeeds[poolIndex];
+        PoolSummary memory summary = hook.getPoolSummary(pool.key.toId());
+        (uint160 sqrtPriceX96, int24 tick,,) = hook.getCurrentPoolState(pool.key.toId());
+
+        return string(
+            abi.encodePacked(
+                "{",
+                '"poolId":"',
+                vm.toString(pool.poolId),
+                '","sqrtPriceX96":',
+                vm.toString(uint256(sqrtPriceX96)),
+                ',"tick":',
+                vm.toString(int256(tick)),
+                ",",
+                _poolHistoryLiquidityJson(summary),
+                ",",
+                _poolHistoryParticipationJson(summary),
+                ",",
+                _poolHistoryTradeFlowJson(summary),
+                "}"
+            )
+        );
+    }
+
+    function _poolHistoryLiquidityJson(PoolSummary memory summary) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                '"totalLiquidity":',
+                vm.toString(uint256(summary.liquidity.totalLiquidity)),
+                ',"activeLiquidity":',
+                vm.toString(uint256(summary.liquidity.activeLiquidity)),
+                ',"peakActiveLiquidity":',
+                vm.toString(uint256(summary.liquidity.peakActiveLiquidity)),
+                ',"liquidityUtilisationBps":',
+                vm.toString(uint256(summary.liquidity.liquidityUtilisationBps))
+            )
+        );
+    }
+
+    function _poolHistoryParticipationJson(PoolSummary memory summary) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                '"activeLpCount":',
+                vm.toString(uint256(summary.lps.activeLpCount)),
+                ',"lifetimeLpCount":',
+                vm.toString(uint256(summary.lps.lifetimeLpCount)),
+                ',"activePositionCount":',
+                vm.toString(uint256(summary.positions.activePositionCount)),
+                ',"totalPositionCount":',
+                vm.toString(uint256(summary.positions.totalPositionCount))
+            )
+        );
+    }
+
+    function _poolHistoryTradeFlowJson(PoolSummary memory summary) internal view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                '"totalSwapCount":',
+                vm.toString(uint256(summary.tradeFlow.totalSwapCount)),
+                ',"zeroToOneSwapCount":',
+                vm.toString(uint256(summary.tradeFlow.zeroToOneSwapCount)),
+                ',"oneToZeroSwapCount":',
+                vm.toString(uint256(summary.tradeFlow.oneToZeroSwapCount)),
+                ',"flowSkewnessBps":',
+                vm.toString(uint256(summary.tradeFlow.flowSkewnessBps))
+            )
+        );
+    }
+
+    function _positionHistoryJson(bytes32 positionId) internal view returns (string memory) {
+        PositionSummary memory summary = hook.getPositionSummary(positionId);
+        PositionLiquidity memory liquidity = hook.getPositionLiquidity(positionId);
+        PositionPnL memory pnl = hook.getPositionPnL(positionId);
+
+        return string(
+            abi.encodePacked(
+                "{",
+                '"active":',
+                _boolToString(summary.active),
+                ',"totalLiquidity":',
+                vm.toString(uint256(liquidity.totalLiquidity)),
+                ',"activeLiquidity":',
+                vm.toString(uint256(liquidity.activeLiquidity)),
+                ',"feeAccumulated0":',
+                vm.toString(pnl.feeAccumulated0),
+                ',"feeAccumulated1":',
+                vm.toString(pnl.feeAccumulated1),
+                ',"netPnl0":',
+                vm.toString(pnl.netPnl0),
+                ',"netPnl1":',
+                vm.toString(pnl.netPnl1),
+                "}"
+            )
         );
     }
 
@@ -714,6 +859,12 @@ abstract contract BaseSquidSimulation is Script, Deployers {
                 ',',
                 '"positions":',
                 _positionsJson(),
+                ',',
+                '"scenarioActions":',
+                _scenarioActionsJson(),
+                ',',
+                '"history":',
+                _historyJson(),
                 "}"
             )
         );
@@ -1036,6 +1187,17 @@ abstract contract BaseSquidSimulation is Script, Deployers {
         }
 
         return string(abi.encodePacked(actionsJson, "]"));
+    }
+
+    function _historyJson() internal view returns (string memory) {
+        string memory historyJson = "[";
+
+        for (uint256 i; i < historyCheckpoints.length; ++i) {
+            if (i > 0) historyJson = string(abi.encodePacked(historyJson, ","));
+            historyJson = string(abi.encodePacked(historyJson, historyCheckpoints[i]));
+        }
+
+        return string(abi.encodePacked(historyJson, "]"));
     }
 
     function _poolsJson() internal view returns (string memory) {

@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Squid Simulation Dashboard",
-  description: "Minimal dashboard for Squid pool and liquidity position metrics.",
+  description: "Artifact-backed observer for Squid pool, position, participant, action, and historical metrics.",
 };
 
 export default function RootLayout({

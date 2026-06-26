@@ -459,6 +459,16 @@ pnpm dev
 
 This app is still a WIP. It is intended to visualize the generated simulation artifact at [script/output/anvil-simulation.json](/Users/saumay/Workspace/gh-saumay/squid/script/output/anvil-simulation.json).
 
+The dashboard is a read-only observer for the versioned `seed-v3` artifact. It includes overview, pool, position, participant, ordered-action, and historical-chart views. Each recorded scenario action has a post-action checkpoint used by the chart view.
+
+To regenerate the artifact before starting the UI:
+
+```sh
+forge script --offline script/SimulateSquid.s.sol:SimulateSquid --sig "simulate()"
+```
+
+Set `SQUID_SIMULATION_ARTIFACT` to override the default artifact path. See `simulation-ui/.env.example`.
+
 ### 4. `deck`
 
 Prerequisites:
